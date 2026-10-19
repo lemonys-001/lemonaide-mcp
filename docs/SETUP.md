@@ -149,6 +149,16 @@ npx wrangler deploy
 5. Dashboard → Settings → **MCP connections** shows the grant; revoke there to
    cut access immediately.
 
+## CI deploy gate
+
+CI runs lint/typecheck/test on every push. The `deploy-worker` job is skipped
+until **both** are true:
+
+1. Repo secrets `CLOUDFLARE_API_TOKEN` + `CLOUDFLARE_ACCOUNT_ID` are set
+   (`gh secret set ... --repo lemonys-001/lemonaide-mcp`).
+2. Repo variable `ENABLE_CLOUDFLARE_DEPLOY` is set to `true`
+   (`gh variable set ENABLE_CLOUDFLARE_DEPLOY --body true --repo lemonys-001/lemonaide-mcp`).
+
 ## Local development
 
 ```bash

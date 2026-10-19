@@ -20,7 +20,9 @@ jobs:
       - run: npm run test
 
   deploy-worker:
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    # Set repository variable ENABLE_CLOUDFLARE_DEPLOY=true after adding the
+    # CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID secrets (docs/SETUP.md).
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.ENABLE_CLOUDFLARE_DEPLOY == 'true'
     needs: check
     runs-on: ubuntu-latest
     permissions:
