@@ -49,7 +49,7 @@ export async function startBuild(
   const fileRows = await repos.listFileRows(db, project.id);
   const version = await repos.nextProjectVersion(db, project.id);
   const snap = await writeSnapshot(
-    env.SOURCE_BUCKET,
+    env.BLOB_STORE,
     project.id,
     version,
     fileRows.map((f) => ({ path: f.path, sha256: f.sha256 })),
@@ -150,8 +150,6 @@ async function dispatchGitHubActionsWorkflow(env: Env, buildId: string): Promise
 }
 
 function platformRepo(env: Env): [string, string] {
-  const raw = env.BUILD_DISPATCH_TOKEN ? "" : "";
-  void raw;
   const repoEnv = (globalThis as { __PLATFORM_REPO__?: string }).__PLATFORM_REPO__;
   const value = repoEnv ?? env.GITHUB_APP_SLUG ?? "lemonys-001/lemonaide-mcp";
   const [owner, repo] = value.split("/");
@@ -232,9 +230,8 @@ export async function buildSourceBundle(env: Env, db: SupabaseClient, buildId: s
   let totalBytes = 0;
 
   for (const row of fileRows) {
-    const direct = await env.SOURCE_BUCKET.get(`${sourceRoot}/${row.path}`);
-    if (!direct) continue;
-    const bytes = await direct.arrayBuffer();
+    const bytes = await env.BLOB_STORE.get(`${sourceRoot}/${row.path}`, "arrayBuffer");
+    if (!bytes) continue;
     totalBytes += bytes.byteLength;
     if (totalBytes > LIMITS.projectTotalMaxBytes) {
       throw new LemonAIdeError(ErrorCode.PAYLOAD_TOO_LARGE, "project source exceeds bundle limit");
@@ -271,16 +268,15 @@ const LOG_MAX = LIMITS.buildLogMaxBytes;
 
 export async function appendBuildLogs(env: Env, db: SupabaseClient, buildId: string, chunk: string): Promise<void> {
   const key = `build/${buildId}/logs.txt`;
-  const existing = await env.ARTIFACT_BUCKET.get(key);
-  const current = existing ? await existing.text() : "";
+  const current = (await env.BLOB_STORE.get(key)) ?? "";
   if (current.length >= LOG_MAX) {
     await repos.updateBuild(db, buildId, { log_truncated: true });
     return;
   }
   const appended = current + chunk;
   const truncated = appended.length > LOG_MAX;
-  await env.ARTIFACT_BUCKET.put(key, truncated ? appended.slice(0, LOG_MAX) : appended, {
-    httpMetadata: { contentType: "text/plain; charset=utf-8" },
+  await env.BLOB_STORE.put(key, truncated ? appended.slice(0, LOG_MAX) : appended, {
+    metadata: { size: Math.min(appended.length, LOG_MAX), contentType: "text/plain; charset=utf-8" },
   });
   if (truncated) await repos.updateBuild(db, buildId, { log_truncated: true });
 }
@@ -292,9 +288,8 @@ export async function readBuildLogs(
   limit: number,
 ): Promise<{ content: string; nextOffset: number; total: number; truncated: boolean }> {
   const key = `build/${buildId}/logs.txt`;
-  const obj = await env.ARTIFACT_BUCKET.get(key);
-  if (!obj) return { content: "", nextOffset: 0, total: 0, truncated: false };
-  const text = await obj.text();
+  const text = (await env.BLOB_STORE.get(key)) ?? "";
+  if (text === null) return { content: "", nextOffset: 0, total: 0, truncated: false };
   const slice = text.slice(offset, offset + limit);
   return { content: slice, nextOffset: offset + slice.length, total: text.length, truncated: false };
 }
@@ -350,7 +345,7 @@ export async function storeArtifactBatch(
       throw new LemonAIdeError(ErrorCode.OUTPUT_VALIDATION_FAILED, "build output exceeds the file count limit");
     }
 
-    await putArtifactFile(env.ARTIFACT_BUCKET, prefix, file.path, bytes as unknown as ArrayBuffer);
+    await putArtifactFile(env.BLOB_STORE, prefix, file.path, bytes as unknown as ArrayBuffer);
     stored++;
   }
 
@@ -401,7 +396,7 @@ export async function validateBuildOutput(env: Env, build: repos.BuildRow): Prom
     throw new LemonAIdeError(ErrorCode.OUTPUT_VALIDATION_FAILED, "build has no artifacts");
   }
   const { listArtifacts } = await import("../storage/source");
-  const artifacts = await listArtifacts(env.ARTIFACT_BUCKET, build.artifact_prefix);
+  const artifacts = await listArtifacts(env.BLOB_STORE, build.artifact_prefix);
   if (artifacts.length === 0) {
     throw new LemonAIdeError(ErrorCode.OUTPUT_VALIDATION_FAILED, "build produced no output files");
   }

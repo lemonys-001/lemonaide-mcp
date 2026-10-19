@@ -19,6 +19,7 @@ import { recordAudit } from "../db/profiles";
 import {
   currentTreeRoot,
   deleteAllSource,
+  deleteArtifacts,
   listSourceFiles,
   putSourceFile,
 } from "../storage/source";
@@ -172,7 +173,7 @@ export async function createProject(
   // Seed the working tree with the framework template.
   const files = templateFiles(project.framework, project.name);
   for (const file of files) {
-    const { size, sha256 } = await putSourceFile(env.SOURCE_BUCKET, project.id, file.path, file.content);
+    const { size, sha256 } = await putSourceFile(env.BLOB_STORE, project.id, file.path, file.content);
     await repos.upsertFileRows(db, project.id, [{ path: file.path, size, sha256 }]);
   }
 
@@ -259,13 +260,18 @@ export async function deleteProjectFully(
     throw new LemonAIdeError(ErrorCode.CONFIRMATION_REQUIRED, `confirmation must equal the project URL name ("${project.slug}")`);
   }
 
+  // Collect artifact prefixes before the DB cascade removes the build rows.
+  const artifactPrefixes = await collectArtifactPrefixes(db, project.id);
+
   // Remove live routing first (supersede current deployment rows via RLS-safe service call).
   await repos.clearCurrentDeployment(db, project.id, actor.userId).catch(() => undefined);
   await repos.deleteProject(db, actor.userId, project.id);
 
   // Cascade removed DB rows; now purge object storage.
-  await deleteAllSource(env.SOURCE_BUCKET, project.id);
-  await deleteAllArtifacts(env, project.id);
+  await deleteAllSource(env.BLOB_STORE, project.id);
+  for (const prefix of artifactPrefixes) {
+    await deleteArtifacts(env.BLOB_STORE, prefix);
+  }
 
   await recordAudit(db, {
     userId: actor.userId,
@@ -277,26 +283,14 @@ export async function deleteProjectFully(
   });
 }
 
-async function deleteAllArtifacts(env: Env, projectId: string): Promise<void> {
-  const prefixes = [`build/`];
-  for (const prefix of prefixes) {
-    let cursor: string | undefined;
-    const keys: string[] = [];
-    do {
-      const page: R2Objects = await env.ARTIFACT_BUCKET.list({ prefix, cursor });
-      for (const obj of page.objects) {
-        if (obj.key.includes(`/${projectId}/`) || obj.key.startsWith(`build/${projectId}/`)) {
-          keys.push(obj.key);
-        }
-      }
-      cursor = page.truncated ? page.cursor : undefined;
-    } while (cursor);
-    if (keys.length > 0) {
-      for (let i = 0; i < keys.length; i += 1000) {
-        await env.ARTIFACT_BUCKET.delete(keys.slice(i, i + 1000));
-      }
-    }
-  }
+async function collectArtifactPrefixes(db: SupabaseClient, projectId: string): Promise<string[]> {
+  const { data, error } = await db
+    .from("builds")
+    .select("artifact_prefix")
+    .eq("project_id", projectId)
+    .not("artifact_prefix", "is", null);
+  if (error) throw new LemonAIdeError(ErrorCode.INTERNAL, "failed to list build artifacts", { cause: error });
+  return (data ?? []).map((row) => row.artifact_prefix as string).filter(Boolean);
 }
 
 /* ------------------------------------------------------------------ */
@@ -315,7 +309,7 @@ const PACKAGE_SPEC_FORBIDDEN = /^(git\+|file:|link:|https?:|git:|ssh:|portal:|wo
 
 export async function validateProject(env: Env, project: repos.Project): Promise<ValidationIssue[]> {
   const issues: ValidationIssue[] = [];
-  const files = await listSourceFiles(env.SOURCE_BUCKET, project.id);
+  const files = await listSourceFiles(env.BLOB_STORE, project.id);
 
   if (files.length === 0) {
     issues.push({ severity: "error", code: "EMPTY_PROJECT", message: "project has no files" });
@@ -400,7 +394,7 @@ export async function validateProject(env: Env, project: repos.Project): Promise
 
 async function readProjectFileRaw(env: Env, projectId: string, path: string): Promise<string | null> {
   const { getSourceFile } = await import("../storage/source");
-  return getSourceFile(env.SOURCE_BUCKET, projectId, path);
+  return getSourceFile(env.BLOB_STORE, projectId, path);
 }
 
 export function issuesToError(issues: ValidationIssue[]): LemonAIdeError | null {

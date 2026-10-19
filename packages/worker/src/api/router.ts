@@ -41,9 +41,11 @@ import {
   connectUrl,
   createRepoForProject,
   disconnectRepo,
+  hasGithubApp,
   readConnectState,
   signConnectState,
   syncProjectToGitHub,
+  tokenAccountLogin,
 } from "../services/github";
 import { deleteSourceFile, getSourceFile, listSourceFiles, putSourceFile } from "../storage/source";
 
@@ -237,7 +239,7 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
     const user = c.get("user");
     const { project } = await requireProjectFor(env, user, c.req.param("ref"));
     const directory = c.req.query("directory") || undefined;
-    const files = await listSourceFiles(env.SOURCE_BUCKET, project.id, directory);
+    const files = await listSourceFiles(env.BLOB_STORE, project.id, directory);
     return jsonOk(files, newCorrelationId());
   });
 
@@ -245,7 +247,7 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
     const user = c.get("user");
     const { project } = await requireProjectFor(env, user, c.req.param("ref"));
     const path = decodeURIComponent(c.req.param("*") ?? "");
-    const content = await getSourceFile(env.SOURCE_BUCKET, project.id, path);
+    const content = await getSourceFile(env.BLOB_STORE, project.id, path);
     if (content === null) return jsonErr(ErrorCode.NOT_FOUND, "file not found", newCorrelationId(), 404);
     return jsonOk({ path, content }, newCorrelationId());
   });
@@ -255,7 +257,7 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
     const { db, project } = await requireProjectFor(env, user, c.req.param("ref"));
     const path = decodeURIComponent(c.req.param("*") ?? "");
     const body = (await c.req.json()) as { content: string };
-    const { size, sha256 } = await putSourceFile(env.SOURCE_BUCKET, project.id, path, String(body.content ?? ""));
+    const { size, sha256 } = await putSourceFile(env.BLOB_STORE, project.id, path, String(body.content ?? ""));
     await repos.upsertFileRows(db, project.id, [{ path, size, sha256 }]);
     return jsonOk({ path, size, sha256 }, newCorrelationId());
   });
@@ -266,7 +268,7 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
     const path = decodeURIComponent(c.req.param("*") ?? "");
     const removed = await repos.deleteFileRow(db, project.id, path);
     if (!removed) return jsonErr(ErrorCode.NOT_FOUND, "file not found", newCorrelationId(), 404);
-    await deleteSourceFile(env.SOURCE_BUCKET, project.id, path);
+    await deleteSourceFile(env.BLOB_STORE, project.id, path);
     return jsonOk({ path, deleted: true }, newCorrelationId());
   });
 
@@ -352,12 +354,34 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
     const user = c.get("user");
     const db = getSupabaseServiceClient(env);
     const installation = await repos.getGithubInstallation(db, user.userId);
+    const appMode = hasGithubApp(env);
+
+    if (installation) {
+      return jsonOk(
+        { mode: "app", connected: true, account: installation.account_login, connectUrl: null },
+        newCorrelationId(),
+      );
+    }
+
+    // Token mode: no GitHub App — the platform-wide token is the credential.
+    if (!appMode && env.BUILD_DISPATCH_TOKEN) {
+      let account = "github";
+      try {
+        account = await tokenAccountLogin(env);
+      } catch {
+        // profile fetch is best-effort; the badge only needs a label
+      }
+      return jsonOk({ mode: "token", connected: true, account, connectUrl: null }, newCorrelationId());
+    }
+
+    let url: string | null = null;
+    try {
+      url = appMode ? connectUrl(env) : null;
+    } catch {
+      url = null;
+    }
     return jsonOk(
-      {
-        connected: Boolean(installation),
-        account: installation?.account_login ?? null,
-        connectUrl: installation ? null : connectUrl(env),
-      },
+      { mode: appMode ? "app" : "none", connected: false, account: null, connectUrl: url },
       newCorrelationId(),
     );
   });

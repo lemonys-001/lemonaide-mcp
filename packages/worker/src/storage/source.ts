@@ -1,14 +1,21 @@
 /**
- * R2 source storage.
+ * Blob storage on Workers KV (free tier; replaces R2 — no card required).
  *
- * Layout (SOURCE_BUCKET):
+ * Layout:
  *   src/{projectId}/files/{path}          current working tree
  *   src/{projectId}/v/{version}/{path}    immutable snapshots
- *
- * Layout (ARTIFACT_BUCKET):
  *   build/{buildId}/dist/{path}           immutable build output (becomes the deployment prefix)
  *
+ * Every value carries KV metadata { size, sha256, contentType? } so prefix
+ * listings can return sizes without fetching values (KV `get` does not expose
+ * metadata; `list` does). Content types are derived from the extension at
+ * serve time via contentTypeFor.
+ *
  * All paths passing through here are validated with validateProjectPath first.
+ *
+ * KV constraints worth remembering: max 25 MiB per value, one write per key
+ * per second (snapshots are content-addressed so keys are write-once), free
+ * quota 1k writes / 1k lists / 1k deletes per day.
  */
 
 import { ErrorCode, LemonAIdeError, normalizePath, validateProjectPath } from "@lemonaide/shared";
@@ -27,7 +34,6 @@ export interface FileTreeEntry {
 }
 
 const encoder = new TextEncoder();
-const decoder = new TextDecoder();
 
 export async function sha256Hex(bytes: ArrayBuffer | Uint8Array): Promise<string> {
   const digest = await crypto.subtle.digest("SHA-256", bytes as BufferSource);
@@ -48,47 +54,79 @@ function safeKey(root: string, path: string): string {
   return `${root}/${normalizePath(path)}`;
 }
 
-export async function putSourceFile(bucket: R2Bucket, projectId: string, path: string, content: string): Promise<{ size: number; sha256: string }> {
-  const bytes = encoder.encode(content);
-  const key = safeKey(currentTreeRoot(projectId), path);
-  const sha = await sha256Hex(bytes);
-  await bucket.put(key, bytes, {
-    httpMetadata: { contentType: contentTypeFor(path) },
-    customMetadata: { sha256: sha },
+interface BlobMeta {
+  size?: number;
+  sha256?: string;
+  contentType?: string;
+}
+
+async function putBlob(
+  kv: KVNamespace,
+  key: string,
+  content: ArrayBuffer | Uint8Array | string,
+  opts: { sha256?: string; contentType?: string } = {},
+): Promise<{ size: number; sha256: string }> {
+  const bytes = typeof content === "string" ? encoder.encode(content) : content instanceof Uint8Array ? content : new Uint8Array(content);
+  const sha256 = opts.sha256 ?? (await sha256Hex(bytes));
+  await kv.put(key, bytes, {
+    metadata: { size: bytes.byteLength, sha256, contentType: opts.contentType } satisfies BlobMeta,
   });
-  return { size: bytes.byteLength, sha256: sha };
+  return { size: bytes.byteLength, sha256 };
 }
 
-export async function getSourceFile(bucket: R2Bucket, projectId: string, path: string): Promise<string | null> {
-  const key = safeKey(currentTreeRoot(projectId), path);
-  const obj = await bucket.get(key);
-  if (!obj) return null;
-  return decoder.decode(await obj.arrayBuffer());
-}
-
-export async function deleteSourceFile(bucket: R2Bucket, projectId: string, path: string): Promise<void> {
-  const key = safeKey(currentTreeRoot(projectId), path);
-  await bucket.delete(key);
-}
-
-export async function listSourceFiles(bucket: R2Bucket, projectId: string, directory?: string): Promise<FileTreeEntry[]> {
-  const root = currentTreeRoot(projectId);
-  const prefix = directory ? `${root}/${normalizePath(directory)}/` : `${root}/`;
-  const entries: FileTreeEntry[] = [];
+async function listPrefix(kv: KVNamespace, prefix: string): Promise<{ name: string; metadata?: unknown }[]> {
+  const out: { name: string; metadata?: unknown }[] = [];
   let cursor: string | undefined;
   do {
-    const page: R2Objects = await bucket.list({ prefix, cursor, include: ["httpMetadata"] });
-    for (const obj of page.objects) {
-      const rel = obj.key.slice(prefix.length);
-      if (!rel || rel.endsWith("/")) continue;
-      entries.push({
-        path: normalizePath(directory ? `${directory}/${rel}` : rel),
-        type: "file",
-        size: obj.size,
-      });
-    }
-    cursor = page.truncated ? page.cursor : undefined;
+    const page = await kv.list({ prefix, cursor });
+    out.push(...page.keys);
+    cursor = page.list_complete ? undefined : page.cursor;
   } while (cursor);
+  return out;
+}
+
+async function deleteKeys(kv: KVNamespace, keys: string[]): Promise<void> {
+  for (const key of keys) await kv.delete(key);
+}
+
+function metaSize(metadata: unknown): number {
+  const size = (metadata as BlobMeta | null | undefined)?.size;
+  return typeof size === "number" ? size : 0;
+}
+
+/* ------------------------------------------------------------------ */
+/* Source tree                                                         */
+/* ------------------------------------------------------------------ */
+
+export async function putSourceFile(kv: KVNamespace, projectId: string, path: string, content: string): Promise<{ size: number; sha256: string }> {
+  const key = safeKey(currentTreeRoot(projectId), path);
+  return putBlob(kv, key, content, { contentType: contentTypeFor(path) });
+}
+
+export async function getSourceFile(kv: KVNamespace, projectId: string, path: string): Promise<string | null> {
+  const key = safeKey(currentTreeRoot(projectId), path);
+  return kv.get(key, "text");
+}
+
+export async function deleteSourceFile(kv: KVNamespace, projectId: string, path: string): Promise<void> {
+  const key = safeKey(currentTreeRoot(projectId), path);
+  await kv.delete(key);
+}
+
+export async function listSourceFiles(kv: KVNamespace, projectId: string, directory?: string): Promise<FileTreeEntry[]> {
+  const root = currentTreeRoot(projectId);
+  const prefix = directory ? `${root}/${normalizePath(directory)}/` : `${root}/`;
+  const keys = await listPrefix(kv, prefix);
+  const entries: FileTreeEntry[] = [];
+  for (const key of keys) {
+    const rel = key.name.slice(prefix.length);
+    if (!rel || rel.endsWith("/")) continue;
+    entries.push({
+      path: normalizePath(directory ? `${directory}/${rel}` : rel),
+      type: "file",
+      size: metaSize(key.metadata),
+    });
+  }
   entries.sort((a, b) => a.path.localeCompare(b.path));
   return entries;
 }
@@ -102,7 +140,7 @@ export interface SnapshotWriteResult {
 
 /** Copy the current tree into an immutable snapshot prefix. */
 export async function writeSnapshot(
-  bucket: R2Bucket,
+  kv: KVNamespace,
   projectId: string,
   version: number,
   files: { path: string; sha256: string }[],
@@ -114,11 +152,10 @@ export async function writeSnapshot(
   for (const file of files) {
     const srcKey = safeKey(currentTreeRoot(projectId), file.path);
     const dstKey = safeKey(prefix, file.path);
-    const obj = await bucket.get(srcKey);
-    if (!obj) continue;
-    const bytes = await obj.arrayBuffer();
+    const bytes = await kv.get(srcKey, "arrayBuffer");
+    if (!bytes) continue;
     totalBytes += bytes.byteLength;
-    await bucket.put(dstKey, bytes, { customMetadata: { sha256: file.sha256 } });
+    await putBlob(kv, dstKey, bytes, { sha256: file.sha256 });
     manifest.push({ path: normalizePath(file.path), size: bytes.byteLength, sha256: file.sha256 });
   }
 
@@ -127,46 +164,29 @@ export async function writeSnapshot(
 
 /** Replace the current tree with the contents of a snapshot (restore). */
 export async function restoreSnapshot(
-  bucket: R2Bucket,
+  kv: KVNamespace,
   projectId: string,
   snapshotPrefix: string,
   manifest: { path: string }[],
 ): Promise<number> {
-  // Delete existing current-tree objects, then copy snapshot → current.
   const root = currentTreeRoot(projectId);
-  let cursor: string | undefined;
-  const staleKeys: string[] = [];
-  do {
-    const page: R2Objects = await bucket.list({ prefix: `${root}/`, cursor });
-    staleKeys.push(...page.objects.map((o) => o.key));
-    cursor = page.truncated ? page.cursor : undefined;
-  } while (cursor);
-  if (staleKeys.length > 0) await bucket.delete(staleKeys);
+  const staleKeys = (await listPrefix(kv, `${root}/`)).map((k) => k.name);
+  await deleteKeys(kv, staleKeys);
 
   let restored = 0;
   for (const file of manifest) {
     const srcKey = safeKey(snapshotPrefix, file.path);
-    const obj = await bucket.get(srcKey);
-    if (!obj) continue;
-    await bucket.put(safeKey(root, file.path), await obj.arrayBuffer(), {
-      customMetadata: obj.customMetadata,
-    });
+    const bytes = await kv.get(srcKey, "arrayBuffer");
+    if (!bytes) continue;
+    await putBlob(kv, safeKey(root, file.path), bytes);
     restored++;
   }
   return restored;
 }
 
-export async function deleteAllSource(bucket: R2Bucket, projectId: string): Promise<void> {
-  for (const prefix of [`src/${projectId}/`]) {
-    let cursor: string | undefined;
-    const keys: string[] = [];
-    do {
-      const page: R2Objects = await bucket.list({ prefix, cursor });
-      keys.push(...page.objects.map((o) => o.key));
-      cursor = page.truncated ? page.cursor : undefined;
-    } while (cursor);
-    if (keys.length > 0) await bucket.delete(keys);
-  }
+export async function deleteAllSource(kv: KVNamespace, projectId: string): Promise<void> {
+  const keys = (await listPrefix(kv, `src/${projectId}/`)).map((k) => k.name);
+  await deleteKeys(kv, keys);
 }
 
 /* ------------------------------------------------------------------ */
@@ -177,15 +197,15 @@ export function buildPrefix(buildId: string): string {
   return `build/${buildId}/dist`;
 }
 
-export async function putArtifactFile(bucket: R2Bucket, prefix: string, path: string, content: ArrayBuffer | string, contentType?: string): Promise<{ size: number; sha256: string }> {
-  const bytes = typeof content === "string" ? encoder.encode(content) : new Uint8Array(content);
+export async function putArtifactFile(
+  kv: KVNamespace,
+  prefix: string,
+  path: string,
+  content: ArrayBuffer | string,
+  contentType?: string,
+): Promise<{ size: number; sha256: string }> {
   const key = safeKey(prefix, path);
-  const sha = await sha256Hex(bytes);
-  await bucket.put(key, bytes, {
-    httpMetadata: { contentType: contentType ?? contentTypeFor(path) },
-    customMetadata: { sha256: sha },
-  });
-  return { size: bytes.byteLength, sha256: sha };
+  return putBlob(kv, key, content, { contentType: contentType ?? contentTypeFor(path) });
 }
 
 export interface ArtifactEntry {
@@ -193,35 +213,33 @@ export interface ArtifactEntry {
   size: number;
 }
 
-export async function listArtifacts(bucket: R2Bucket, prefix: string): Promise<ArtifactEntry[]> {
+export async function listArtifacts(kv: KVNamespace, prefix: string): Promise<ArtifactEntry[]> {
+  const keys = await listPrefix(kv, `${prefix}/`);
   const entries: ArtifactEntry[] = [];
-  let cursor: string | undefined;
-  do {
-    const page: R2Objects = await bucket.list({ prefix: `${prefix}/`, cursor });
-    for (const obj of page.objects) {
-      const rel = obj.key.slice(prefix.length + 1);
-      if (!rel || rel.endsWith("/")) continue;
-      entries.push({ path: rel, size: obj.size });
-    }
-    cursor = page.truncated ? page.cursor : undefined;
-  } while (cursor);
+  for (const key of keys) {
+    const rel = key.name.slice(prefix.length + 1);
+    if (!rel || rel.endsWith("/")) continue;
+    entries.push({ path: rel, size: metaSize(key.metadata) });
+  }
   return entries;
 }
 
-export async function getArtifact(bucket: R2Bucket, prefix: string, path: string): Promise<R2ObjectBody | null> {
-  const key = safeKey(prefix, path);
-  return bucket.get(key);
+export interface BlobObject {
+  key: string;
+  size: number;
+  bytes: ArrayBuffer;
 }
 
-export async function deleteArtifacts(bucket: R2Bucket, prefix: string): Promise<void> {
-  let cursor: string | undefined;
-  const keys: string[] = [];
-  do {
-    const page: R2Objects = await bucket.list({ prefix: `${prefix}/`, cursor });
-    keys.push(...page.objects.map((o) => o.key));
-    cursor = page.truncated ? page.cursor : undefined;
-  } while (cursor);
-  if (keys.length > 0) await bucket.delete(keys);
+export async function getArtifact(kv: KVNamespace, prefix: string, path: string): Promise<BlobObject | null> {
+  const key = safeKey(prefix, path);
+  const bytes = await kv.get(key, "arrayBuffer");
+  if (!bytes) return null;
+  return { key, size: bytes.byteLength, bytes };
+}
+
+export async function deleteArtifacts(kv: KVNamespace, prefix: string): Promise<void> {
+  const keys = (await listPrefix(kv, `${prefix}/`)).map((k) => k.name);
+  await deleteKeys(kv, keys);
 }
 
 /* ------------------------------------------------------------------ */

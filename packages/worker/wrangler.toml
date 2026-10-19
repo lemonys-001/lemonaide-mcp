@@ -5,6 +5,9 @@ compatibility_flags = ["nodejs_compat"]
 
 # ---------------------------------------------------------------------------
 # Environments
+#
+# Wrangler does NOT inherit top-level bindings into named environments, so the
+# full binding set is repeated under [env.production.*] below.
 # ---------------------------------------------------------------------------
 [vars]
 # Public configuration (safe to expose). Secrets are set with `wrangler secret put`.
@@ -12,28 +15,14 @@ APP_BASE_DOMAIN = "localhost:8787"
 MCP_PUBLIC_URL = "http://localhost:8787/mcp"
 ENVIRONMENT = "development"
 
-[env.production.vars]
-APP_BASE_DOMAIN = "apps.example.com"
-MCP_PUBLIC_URL = "https://apps.example.com/mcp"
-ENVIRONMENT = "production"
-
-# ---------------------------------------------------------------------------
-# Bindings (names must match Env in src/env.ts)
-# ---------------------------------------------------------------------------
 [[kv_namespaces]]
 binding = "OAUTH_KV"
-id = "REPLACE_WITH_KV_ID"
-preview_id = "REPLACE_WITH_KV_PREVIEW_ID"
+id = "396cc35e40a84e57b5345650744174aa"
+preview_id = "396cc35e40a84e57b5345650744174aa"
 
-[[r2_buckets]]
-binding = "SOURCE_BUCKET"
-bucket_name = "lemonaide-source"
-preview_bucket_name = "lemonaide-source-preview"
-
-[[r2_buckets]]
-binding = "ARTIFACT_BUCKET"
-bucket_name = "lemonaide-artifacts"
-preview_bucket_name = "lemonaide-artifacts-preview"
+[[kv_namespaces]]
+binding = "BLOB_STORE"
+id = "f16f9b8ff6f34ce0bfb4c79c0128172e"
 
 [[queues.producers]]
 binding = "BUILD_QUEUE"
@@ -48,6 +37,39 @@ max_concurrency = 5
 # Worker fetch() runs first for EVERY request — index.ts explicitly delegates to
 # env.DASHBOARD for dashboard routes, so assets never shadow published apps.
 [assets]
+directory = "../dashboard/dist"
+binding = "DASHBOARD"
+not_found_handling = "single-page-application"
+run_worker_first = true
+
+# --- production -------------------------------------------------------------
+[env.production]
+name = "lemonaide-mcp"
+
+[env.production.vars]
+APP_BASE_DOMAIN = "lemonaide-mcp.lemonys.workers.dev"
+MCP_PUBLIC_URL = "https://lemonaide-mcp.lemonys.workers.dev/mcp"
+ENVIRONMENT = "production"
+
+[[env.production.kv_namespaces]]
+binding = "OAUTH_KV"
+id = "396cc35e40a84e57b5345650744174aa"
+preview_id = "396cc35e40a84e57b5345650744174aa"
+
+[[env.production.kv_namespaces]]
+binding = "BLOB_STORE"
+id = "f16f9b8ff6f34ce0bfb4c79c0128172e"
+
+[[env.production.queues.producers]]
+binding = "BUILD_QUEUE"
+queue = "lemonaide-builds"
+
+[[env.production.queues.consumers]]
+queue = "lemonaide-builds"
+max_retries = 2
+max_concurrency = 5
+
+[env.production.assets]
 directory = "../dashboard/dist"
 binding = "DASHBOARD"
 not_found_handling = "single-page-application"

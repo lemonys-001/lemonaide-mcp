@@ -197,7 +197,7 @@ export function registerProjectTools(server: McpServer, ctx: ToolContext): void 
     async ({ project: ref, directory }) =>
       runTool(async () => {
         const project = await resolveProject(ctx, ref);
-        const files = await listSourceFiles(ctx.env.SOURCE_BUCKET, project.id, directory);
+        const files = await listSourceFiles(ctx.env.BLOB_STORE, project.id, directory);
         return files.map((f) => ({ path: f.path, size: f.size }));
       }),
   );
@@ -215,7 +215,7 @@ export function registerProjectTools(server: McpServer, ctx: ToolContext): void 
     async ({ project: ref, path }) =>
       runTool(async () => {
         const project = await resolveProject(ctx, ref);
-        const content = await getSourceFile(ctx.env.SOURCE_BUCKET, project.id, path);
+        const content = await getSourceFile(ctx.env.BLOB_STORE, project.id, path);
         if (content === null) throw new LemonAIdeError(ErrorCode.NOT_FOUND, `no file at "${path}"`);
         return { path, content, bytes: content.length };
       }),
@@ -239,7 +239,7 @@ export function registerProjectTools(server: McpServer, ctx: ToolContext): void 
         if (new TextEncoder().encode(content).byteLength > LIMITS.projectFileMaxBytes) {
           throw new LemonAIdeError(ErrorCode.PAYLOAD_TOO_LARGE, `file exceeds ${LIMITS.projectFileMaxBytes} bytes`);
         }
-        const { size, sha256 } = await putSourceFile(ctx.env.SOURCE_BUCKET, project.id, path, content);
+        const { size, sha256 } = await putSourceFile(ctx.env.BLOB_STORE, project.id, path, content);
         await repos.upsertFileRows(ctx.db, project.id, [{ path, size, sha256 }]);
         return { path, size, sha256, written: true };
       }),
@@ -272,7 +272,7 @@ export function registerProjectTools(server: McpServer, ctx: ToolContext): void 
           if (new TextEncoder().encode(file.content).byteLength > LIMITS.projectFileMaxBytes) {
             throw new LemonAIdeError(ErrorCode.PAYLOAD_TOO_LARGE, `${file.path} exceeds ${LIMITS.projectFileMaxBytes} bytes`);
           }
-          const { size, sha256 } = await putSourceFile(ctx.env.SOURCE_BUCKET, project.id, file.path, file.content);
+          const { size, sha256 } = await putSourceFile(ctx.env.BLOB_STORE, project.id, file.path, file.content);
           results.push({ path: file.path, size, sha256 });
         }
         await repos.upsertFileRows(ctx.db, project.id, results);
@@ -296,7 +296,7 @@ export function registerProjectTools(server: McpServer, ctx: ToolContext): void 
         const project = await resolveProject(ctx, ref);
         const removed = await repos.deleteFileRow(ctx.db, project.id, path);
         if (!removed) throw new LemonAIdeError(ErrorCode.NOT_FOUND, `no file at "${path}"`);
-        await deleteSourceFile(ctx.env.SOURCE_BUCKET, project.id, path);
+        await deleteSourceFile(ctx.env.BLOB_STORE, project.id, path);
         return { path, deleted: true };
       }),
   );

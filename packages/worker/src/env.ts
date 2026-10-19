@@ -4,8 +4,7 @@ export interface Env {
   MCP_PUBLIC_URL: string;
 
   OAUTH_KV: KVNamespace;
-  SOURCE_BUCKET: R2Bucket;
-  ARTIFACT_BUCKET: R2Bucket;
+  BLOB_STORE: KVNamespace;
   BUILD_QUEUE: Queue;
   DASHBOARD: Fetcher;
 

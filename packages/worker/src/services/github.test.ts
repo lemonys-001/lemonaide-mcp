@@ -33,7 +33,11 @@ describe("connect state HMAC", () => {
   it("rejects tampered payloads", async () => {
     const env = fakeEnv();
     const state = await signConnectState(env, "user-1");
-    const flip = state.slice(0, -1) + (state.endsWith("A") ? "B" : "A");
+    // Flip a middle character: the last base64url char can be non-canonical
+    // (trailing unused bits), so a last-char flip may decode to the same bytes.
+    const at = 3;
+    const flip = state.slice(0, at) + (state[at] === "A" ? "B" : "A") + state.slice(at + 1);
+    expect(flip).not.toBe(state);
     expect(await readConnectState(env, flip)).toBeNull();
   });
 

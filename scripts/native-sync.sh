@@ -8,6 +8,11 @@ SRC="/mnt/sdcard/projects/lemonaide-mcp"
 DST="/root/.lemonaide"
 
 for pkg in shared worker dashboard; do
+  KEEP=""
+  if [ -d "$DST/packages/$pkg/dist" ]; then
+    KEEP="/tmp/lemonaide-keep-dist-$$"
+    mv "$DST/packages/$pkg/dist" "$KEEP"
+  fi
   rm -rf "$DST/packages/$pkg"
   mkdir -p "$DST/packages/$pkg"
   cp -a "$SRC/packages/$pkg/package.json" "$DST/packages/$pkg/"
@@ -17,6 +22,7 @@ for pkg in shared worker dashboard; do
   cp -a "$SRC/packages/$pkg/index.html" "$DST/packages/$pkg/" 2>/dev/null || true
   cp -a "$SRC/packages/$pkg/src" "$DST/packages/$pkg/"
   [ -d "$SRC/packages/$pkg/test" ] && cp -a "$SRC/packages/$pkg/test" "$DST/packages/$pkg/"
+  if [ -n "$KEEP" ] && [ -d "$KEEP" ]; then mv "$KEEP" "$DST/packages/$pkg/dist"; fi
   true
 done
 cp -a "$SRC/package.json" "$DST/package.json"

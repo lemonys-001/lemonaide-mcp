@@ -92,7 +92,8 @@ export interface GithubInstallation {
 export interface GithubRepository {
   id: string;
   project_id: string;
-  installation_id: number;
+  /** Null in token (PAT) mode — no GitHub App installation exists. */
+  installation_id: number | null;
   repo_full_name: string;
   repo_url: string;
   default_branch: string;
@@ -699,7 +700,7 @@ export async function upsertGithubRepository(
   db: SupabaseClient,
   input: {
     projectId: string;
-    installationId: number;
+    installationId: number | null;
     repoFullName: string;
     repoUrl: string;
     defaultBranch?: string;

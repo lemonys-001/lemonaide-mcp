@@ -1,7 +1,7 @@
 /**
  * Published-app router: serves live deployments at /{username}/{slug}/*.
  *
- *  - Assets come from the promoted deployment's artifact prefix (R2).
+ *  - Assets come from the promoted deployment's artifact prefix (Workers KV).
  *  - Vite builds get SPA fallback to index.html; static sites 404.
  *  - HTML is never cached immutably; content-hashed assets are.
  */
@@ -16,6 +16,15 @@ const SPA_FRAMEWORKS = new Set(["vite-react-ts", "vite-vanilla"]);
 const HASHED_ASSET_RE = /[.-][A-Za-z0-9_-]{8,}\.[a-z0-9]+$/;
 
 export async function servePublishedApp(request: Request, env: Env, username: string, slug: string, restPath: string): Promise<Response> {
+  if (!env.SUPABASE_URL) {
+    return htmlPage(
+      "Temporarily unavailable",
+      `<div class="brand">LemonAIde</div>
+<h1>Temporarily unavailable</h1>
+<p>This platform is not fully configured yet (missing Supabase credentials).</p>`,
+      503,
+    );
+  }
   const db = getSupabaseServiceClient(env);
   const found = await lookupLiveDeployment(db, username, slug);
 
@@ -34,23 +43,23 @@ export async function servePublishedApp(request: Request, env: Env, username: st
   }
 
   let key = path === "" ? "index.html" : path;
-  let obj = await getArtifact(env.ARTIFACT_BUCKET, deployment.asset_prefix, key);
+  let obj = await getArtifact(env.BLOB_STORE, deployment.asset_prefix, key);
 
   if (!obj && (key === "" || key.endsWith("/"))) {
-    obj = await getArtifact(env.ARTIFACT_BUCKET, deployment.asset_prefix, `${key}index.html`);
+    obj = await getArtifact(env.BLOB_STORE, deployment.asset_prefix, `${key}index.html`);
     key = obj ? `${key}index.html` : key;
   }
 
   // SPA fallback: unknown routes serve the app shell.
   if (!obj && isSpa && !path.includes(".")) {
-    obj = await getArtifact(env.ARTIFACT_BUCKET, deployment.asset_prefix, "index.html");
+    obj = await getArtifact(env.BLOB_STORE, deployment.asset_prefix, "index.html");
     key = "index.html";
   }
 
   if (!obj) {
     if (isSpa) {
       // SPA with a missing entry: still try the root shell.
-      obj = await getArtifact(env.ARTIFACT_BUCKET, deployment.asset_prefix, "index.html");
+      obj = await getArtifact(env.BLOB_STORE, deployment.asset_prefix, "index.html");
       key = "index.html";
     }
     if (!obj) return notFoundPage(username, slug, "This app has no page at that address.");
@@ -69,7 +78,7 @@ export async function servePublishedApp(request: Request, env: Env, username: st
   });
   if (deployment.build_id) headers.set("x-lemonaide-build", deployment.build_id);
 
-  return new Response(obj.body, { headers });
+  return new Response(obj.bytes, { headers });
 }
 
 export function normalizeRequestPath(restPath: string): string {
