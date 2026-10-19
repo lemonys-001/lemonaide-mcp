@@ -1,0 +1,62 @@
+name = "lemonaide-mcp"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+# ---------------------------------------------------------------------------
+# Environments
+# ---------------------------------------------------------------------------
+[vars]
+# Public configuration (safe to expose). Secrets are set with `wrangler secret put`.
+APP_BASE_DOMAIN = "localhost:8787"
+MCP_PUBLIC_URL = "http://localhost:8787/mcp"
+ENVIRONMENT = "development"
+
+[env.production.vars]
+APP_BASE_DOMAIN = "apps.example.com"
+MCP_PUBLIC_URL = "https://apps.example.com/mcp"
+ENVIRONMENT = "production"
+
+# ---------------------------------------------------------------------------
+# Bindings (names must match Env in src/env.ts)
+# ---------------------------------------------------------------------------
+[[kv_namespaces]]
+binding = "OAUTH_KV"
+id = "REPLACE_WITH_KV_ID"
+preview_id = "REPLACE_WITH_KV_PREVIEW_ID"
+
+[[r2_buckets]]
+binding = "SOURCE_BUCKET"
+bucket_name = "lemonaide-source"
+preview_bucket_name = "lemonaide-source-preview"
+
+[[r2_buckets]]
+binding = "ARTIFACT_BUCKET"
+bucket_name = "lemonaide-artifacts"
+preview_bucket_name = "lemonaide-artifacts-preview"
+
+[[queues.producers]]
+binding = "BUILD_QUEUE"
+queue = "lemonaide-builds"
+
+[[queues.consumers]]
+queue = "lemonaide-builds"
+max_retries = 2
+max_concurrency = 5
+
+# Dashboard is served as Worker static assets (mounted from the dashboard build).
+# Worker fetch() runs first for EVERY request — index.ts explicitly delegates to
+# env.DASHBOARD for dashboard routes, so assets never shadow published apps.
+[assets]
+directory = "../dashboard/dist"
+binding = "DASHBOARD"
+not_found_handling = "single-page-application"
+run_worker_first = true
+
+# ---------------------------------------------------------------------------
+# Secrets (set via `wrangler secret put NAME` — see docs/SETUP.md):
+#   SUPABASE_URL, SUPABASE_ANON_KEY, SUPABASE_SERVICE_ROLE_KEY,
+#   GITHUB_APP_ID, GITHUB_APP_CLIENT_ID, GITHUB_APP_CLIENT_SECRET,
+#   GITHUB_APP_PRIVATE_KEY, GITHUB_APP_WEBHOOK_SECRET,
+#   BUILD_RUNNER_TOKEN, SESSION_SECRET
+# ---------------------------------------------------------------------------

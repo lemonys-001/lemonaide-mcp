@@ -1,0 +1,42 @@
+# LemonAIde isolated build runner.
+# Triggered by the platform worker (workflow_dispatch with build_id input).
+# Executes only the allowlisted commands the platform returns — never
+# commands from user source directly.
+name: build-runner
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_id:
+        description: "Build id from the LemonAIde platform"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: lemonaide-build-${{ inputs.build_id }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      WORKER_BASE_URL: ${{ vars.WORKER_BASE_URL }}
+      BUILD_RUNNER_TOKEN: ${{ secrets.BUILD_RUNNER_TOKEN }}
+    steps:
+      - name: Check configuration
+        run: |
+          if [ -z "$WORKER_BASE_URL" ]; then
+            echo "::error::Repository variable WORKER_BASE_URL is not set"
+            exit 1
+          fi
+          if [ -z "$BUILD_RUNNER_TOKEN" ]; then
+            echo "::error::Repository secret BUILD_RUNNER_TOKEN is not set"
+            exit 1
+          fi
+
+      - name: Run build
+        run: bash scripts/build-runner.sh "${{ inputs.build_id }}"

@@ -1,0 +1,32 @@
+{
+  "name": "lemonaide-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "LemonAIde MCP \u2014 AI-powered web app creation & hosting platform on Cloudflare Workers",
+  "workspaces": [
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "npm run dev -w @lemonaide/worker",
+    "dev:dashboard": "npm run dev -w @lemonaide/dashboard",
+    "build": "npm run build --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspaces --if-present",
+    "lint": "eslint .",
+    "check": "npm run typecheck && npm run test && npm run lint"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.0.0",
+    "eslint": "^9.0.0",
+    "typescript-eslint": "^8.0.0",
+    "typescript": "^5.9.0",
+    "vite": "^7.1.0"
+  },
+  "overrides": {
+    "vite": "^7.1.0"
+  }
+}

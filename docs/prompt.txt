@@ -1,0 +1,713 @@
+Build LemonAIde MCP — AI-Powered Web App Creation & Hosting Platform
+
+Act as a senior full-stack engineer, MCP protocol specialist, Cloudflare Workers developer, DevOps engineer, and application security architect.
+
+Build a production-oriented platform named LemonAIde MCP. It must allow AI assistants such as Claude, OpenCode, and other MCP-compatible clients to create, edit, manage, and publish functional web applications for authenticated users.
+
+Do not just generate a prototype, mockup, or documentation. Implement the complete working system, including the MCP server, authentication, file storage, GitHub integration, publishing pipeline, dashboard, and deployment configuration.
+
+The application owner will supply API keys and configuration values after development. Build the application so it works once the owner configures those values.
+
+1. Core user experience
+
+A user signs into LemonAIde using Google OAuth through Supabase Auth.
+
+The user connects the LemonAIde MCP server to Claude or another MCP-compatible AI client.
+
+The user can then ask:
+
+"Create a modern todo app with categories, due dates, dark mode, and local data persistence."
+
+The AI should be able to:
+
+Authenticate as the correct LemonAIde user through the MCP connection.
+
+Create a project under that user's account.
+
+Generate the application's complete source code.
+
+Create directories and write all necessary files.
+
+Install or resolve dependencies using a secure build process.
+
+Build and validate the application.
+
+Fix compilation and build errors where possible.
+
+Save all source files and project metadata.
+
+Create or update a GitHub repository or use an existing repository for that project.
+
+Commit and push source files to GitHub.
+
+Publish the built application using Cloudflare infrastructure.
+
+Return the live URL, build status, source repository, and relevant logs to the AI client.
+
+Example published URL:
+
+https://example.com/lemonai/user/todo-app
+
+The production URL pattern must instead be configurable and follow the exact required format:
+
+https://YOUR_DOMAIN/{username}/{appname}
+
+Use the authenticated user's unique username, not an arbitrary username supplied by the AI. If the required URL pattern is /user/appname, interpret user as the actual logged-in user's username.
+
+The same configured domain must be used throughout the MCP server, dashboard, and published applications. Do not hardcode example.com into production logic.
+
+The AI must not need direct access to Cloudflare API tokens, GitHub personal access tokens, Supabase service-role keys, or other server secrets.
+
+2. Required technology stack
+
+Use these technologies:
+
+MCP server: TypeScript with the official Model Context Protocol SDK.
+
+Runtime: Cloudflare Workers.
+
+Worker routing: Hono or another compatible lightweight router.
+
+Frontend dashboard: React and TypeScript with Vite.
+
+Authentication: Supabase Auth with Google OAuth.
+
+Database: Supabase Postgres.
+
+File storage: Cloudflare R2 for project files, source archives, build artifacts, and deployment assets where appropriate.
+
+Git integration: GitHub App integration preferred over a personal access token.
+
+Hosting: Cloudflare Workers and/or Cloudflare Pages, selected based on the application's requirements.
+
+Background processing: Cloudflare Queues and Workers where useful.
+
+Build execution: isolated build workers or a dedicated secure build service.
+
+Validation: TypeScript, linting, framework-specific checks, and production build verification.
+
+Use Cloudflare D1 instead of Supabase Postgres only if a concrete architectural constraint makes it necessary. Prefer Supabase Postgres because it is the application's authentication and user-account system.
+
+Use current, mutually compatible versions of dependencies. Verify the MCP SDK and Cloudflare Workers compatibility rather than assuming Node.js APIs will work inside Workers.
+
+3. Architecture
+
+Create separate, clearly defined modules for:
+
+A. MCP server
+
+Exposes tools to connected AI clients.
+
+Authenticates and authorizes every operation.
+
+Associates each request with a verified LemonAIde user.
+
+Streams progress or returns structured operation results where supported.
+
+B. Authentication and account management
+
+Supabase Google OAuth login.
+
+User profile and unique username management.
+
+Secure MCP authorization.
+
+Account settings and project ownership.
+
+C. Project manager
+
+Project creation, editing, listing, renaming, archiving, and deletion.
+
+Framework and runtime metadata.
+
+File tree management.
+
+Project version history.
+
+Build and deployment status.
+
+D. Source storage
+
+Store complete project files in Cloudflare R2.
+
+Maintain a project manifest and version metadata.
+
+Keep user data isolated by ownership.
+
+Provide versioned snapshots and restore functionality.
+
+E. GitHub integration
+
+Create and manage repositories.
+
+Commit source files.
+
+Push changes to the correct branch.
+
+Track commit hashes and repository URLs.
+
+Support private repositories by default.
+
+Keep repository credentials on the server.
+
+F. Build system
+
+Resolve dependencies.
+
+Run supported build commands in an isolated environment.
+
+Produce static assets or deployable Worker bundles.
+
+Capture errors and logs.
+
+Reject unsafe build configurations.
+
+Report build status to the MCP client.
+
+G. Deployment system
+
+Publish validated build artifacts.
+
+Map published projects to stable URLs.
+
+Support redeployment and rollback.
+
+Track deployment versions and status.
+
+Remove deployments safely when projects are deleted.
+
+H. Dashboard
+
+Show projects, live URLs, builds, logs, GitHub status, and deployment history.
+
+Allow manual project creation and editing.
+
+Provide MCP connection instructions.
+
+Provide account and domain settings.
+
+Display actionable error messages.
+
+4. MCP tools
+
+Implement real MCP tools with validated input schemas and useful structured output. Use the official SDK and current supported MCP transport.
+
+At minimum, implement these tools:
+
+Authentication and identity
+
+get_current_user: return the authenticated user's ID, username, and account information.
+
+get_account_limits: return project, storage, and deployment quotas.
+
+get_mcp_connection_info: return the user's connection status and setup information without exposing credentials.
+
+Projects
+
+create_project: create a project with a validated name, framework, and optional description.
+
+list_projects: list only the authenticated user's projects.
+
+get_project: return project metadata and deployment status.
+
+rename_project: rename a project safely.
+
+delete_project: delete a project after explicit confirmation.
+
+archive_project: archive a project.
+
+restore_project: restore an archived project when supported.
+
+Files
+
+list_project_files: return the file tree.
+
+read_project_file: read a specific file.
+
+write_project_file: create or replace a file.
+
+write_project_files: write multiple files in one operation.
+
+delete_project_file: delete a file with path validation.
+
+move_project_file: move or rename a file.
+
+get_project_snapshot: return version and snapshot metadata.
+
+restore_project_snapshot: restore a previous snapshot.
+
+Build and validation
+
+validate_project: validate file structure and supported configuration.
+
+install_project_dependencies: install dependencies inside the isolated build environment.
+
+build_project: run a supported production build.
+
+get_build_status: retrieve status and errors.
+
+get_build_logs: return bounded, sanitized build logs.
+
+GitHub
+
+connect_github: initiate a secure GitHub App installation or OAuth flow.
+
+create_github_repository: create a repository for a project.
+
+sync_project_to_github: commit and push project files.
+
+get_github_status: return repository and latest commit information.
+
+get_github_commits: retrieve relevant project commit history.
+
+Deployment
+
+deploy_project: publish a successfully built project.
+
+get_deployment_status: return the deployment state and URL.
+
+list_deployments: list deployments for a project.
+
+rollback_deployment: restore a previous successful deployment.
+
+unpublish_project: unpublish a project after confirmation.
+
+get_live_url: return the current canonical URL.
+
+Optional tools
+
+create_project_from_template
+
+duplicate_project
+
+export_project_archive
+
+check_project_health
+
+get_supported_frameworks
+
+Use descriptive errors and stable error codes. Include schemas that constrain project names, framework values, paths, file sizes, and other resource-intensive inputs.
+
+Every operation must perform real work. Do not implement fake success responses, placeholder deployments, simulated GitHub pushes, or mock file storage.
+
+5. MCP connection and authentication
+
+Make the MCP endpoint configurable, for example:
+
+https://YOUR_DOMAIN/mcp
+
+Use a supported remote MCP transport compatible with Cloudflare Workers and the chosen SDK version.
+
+Prefer an OAuth 2.1-compatible authorization flow for remote MCP clients where supported. Integrate it with Supabase identity and the authorization model.
+
+Requirements:
+
+Users authenticate using their own LemonAIde account.
+
+Every MCP session or access token is bound to a verified user.
+
+Enforce token audience, issuer, expiration, and scope validation.
+
+Use short-lived access tokens and secure refresh-token handling where applicable.
+
+Store only hashed credentials when the design calls for stored tokens.
+
+Provide a clear authorization and revocation flow.
+
+Never trust a user ID or username provided in an MCP tool argument.
+
+Never treat an unverified Supabase session or decoded JWT as proof of identity.
+
+Never allow one user to access another user's projects.
+
+Support revoking a connected MCP client without deleting the user's LemonAIde account.
+
+Follow current MCP authentication security recommendations.
+
+Do not expose the Supabase service-role key to the browser or MCP client.
+
+If full OAuth discovery cannot be implemented in one pass, build a secure, documented initial connection flow, but do not claim standards compliance until it has been tested.
+
+6. Domain and URL routing
+
+Allow the owner to configure a single primary domain, such as apps.example.com or example.com.
+
+The platform must publish user projects using a configurable path format:
+
+/{username}/{appname}
+
+Examples:
+
+https://apps.example.com/lemon/todo-app
+
+https://apps.example.com/lemon/portfolio
+
+https://apps.example.com/alex/weather-dashboard
+
+The logged-in user has a unique, reserved username. Project names must be converted into URL-safe slugs.
+
+Implement:
+
+Unique username enforcement.
+
+Unique project slug per user.
+
+Collision detection.
+
+Reserved route protection.
+
+Correct handling of SPA routes and client-side navigation.
+
+HTTPS.
+
+Custom 404 pages.
+
+Cache invalidation on redeployment.
+
+URL validation and canonical URL generation.
+
+Safe project deletion and unpublishing.
+
+Redirects when a project slug changes, if appropriate.
+
+Important: Cloudflare Pages does not automatically provide arbitrary per-project deployment paths on one hostname. Design the routing layer explicitly.
+
+Use a Cloudflare Worker as the main domain router. It should look up the published project, resolve its current deployment, and serve the correct assets from R2 or another suitable origin.
+
+Do not depend on creating a separate Cloudflare Pages project for every application if that makes the desired path-based routing impractical.
+
+For static apps, implement a secure asset-serving and routing mechanism. For applications requiring server-side APIs, server-side rendering, or long-running processes, clearly define which deployment modes are supported and deploy them using appropriate infrastructure.
+
+A user-created app must never be able to overwrite another user's files or intercept another user's routes.
+
+7. Cloudflare implementation
+
+Generate the necessary Cloudflare resources and configuration.
+
+Include:
+
+wrangler.toml or the current recommended Wrangler configuration format.
+
+Worker entry points.
+
+Worker bindings.
+
+R2 buckets.
+
+Queues if required.
+
+Database connection configuration.
+
+Domain and routing configuration.
+
+Build and deployment scripts.
+
+Environment-specific configuration.
+
+Local development instructions.
+
+Production deployment instructions.
+
+A reproducible infrastructure setup checklist.
+
+Support at least development and production environments.
+
+Store build artifacts and static site assets in a design that supports safe publication under the shared domain. The domain router must resolve requests to the appropriate immutable deployment version.
+
+Do not store every file as a public object. Published assets should only be reachable through the intended deployment router, with private project source files protected.
+
+For larger or more complex applications, implement a separate build service or isolated build runner rather than trying to run arbitrary package managers inside a normal Cloudflare Worker request.
+
+Cloudflare Workers have runtime, CPU, memory, and execution constraints. Respect those constraints instead of assuming a full Linux environment is available.
+
+8. Secure build execution
+
+AI-generated source code and dependency scripts are untrusted.
+
+Build execution must be isolated from the main MCP server and privileged infrastructure.
+
+Implement:
+
+An isolated build environment with resource limits.
+
+Build timeouts and output-size limits.
+
+Restricted outbound network access where practical.
+
+No Cloudflare API tokens or GitHub credentials inside application build environments.
+
+No access to other users' project files.
+
+Dependency and package-name validation.
+
+Path traversal prevention.
+
+Symlink handling and archive extraction validation.
+
+Log redaction for secrets.
+
+Rate limits on builds and deployments.
+
+Build cancellation.
+
+Per-user resource quotas.
+
+Artifact validation before publication.
+
+Protection against malicious post-install scripts where feasible.
+
+Explicit allowlists for supported frameworks and build commands.
+
+Do not run arbitrary AI-generated shell commands directly inside the privileged Cloudflare Worker.
+
+If a dedicated remote build runner is needed, provide a clearly defined adapter and deployable implementation for it. Do not leave it as an undocumented placeholder.
+
+9. Supported application types
+
+Implement a reliable first release for static web applications.
+
+Initial framework support should include:
+
+Plain HTML, CSS, and JavaScript.
+
+Vite with React and TypeScript.
+
+Vite with vanilla JavaScript.
+
+Other static-output frameworks only after their build and routing behavior has been validated.
+
+For the first release, the primary deliverable is a working static web app that can be created, built, stored, and published.
+
+Do not claim support for arbitrary Node.js servers, Docker containers, databases created by users, persistent background processes, or full-stack applications unless the required infrastructure has actually been implemented.
+
+Design the architecture so server-side Workers, user-managed API integrations, and other deployment modes can be added later.
+
+10. GitHub integration
+
+Use a GitHub App where possible.
+
+Requirements:
+
+Keep the GitHub App private key and installation credentials server-side.
+
+Create private repositories by default.
+
+Support a user-owned GitHub account or organization through an explicit installation and permission flow.
+
+Let the owner configure a platform-managed GitHub App.
+
+Let users choose a repository name and visibility where authorized.
+
+Use least-privilege repository permissions.
+
+Avoid committing secrets or .env files.
+
+Add appropriate .gitignore files.
+
+Scan commits for likely secrets before pushing.
+
+Store repository metadata in the database.
+
+Record the commit SHA corresponding to each deployment.
+
+Support retries without creating duplicate or inconsistent commits.
+
+If the GitHub integration is unavailable, source storage and deployment should still work independently, with a clear GitHub connection status.
+
+11. Supabase database
+
+Create version-controlled SQL migrations for all tables.
+
+Include, at minimum:
+
+profiles
+
+projects
+
+project_versions
+
+project_files or an equivalent object-storage manifest
+
+builds
+
+deployments
+
+github_installations
+
+github_repositories
+
+mcp_authorizations
+
+usage_records
+
+audit_logs
+
+Every user-owned record must have an ownership relationship.
+
+Implement Row Level Security policies for browser-accessible tables. Use server-side database access with the appropriate verified identity and authorization checks.
+
+Never rely solely on frontend filtering for tenant isolation.
+
+Add constraints and indexes for usernames, project slugs, project ownership, deployment lookups, and frequently queried statuses.
+
+Use transactional operations where multiple metadata records must change together.
+
+Store large source files and artifacts in R2 rather than putting unlimited source content into Postgres rows.
+
+12. Dashboard UI
+
+Build a responsive, polished developer dashboard with a modern dark-first interface and accessible light mode.
+
+Include:
+
+Google sign-in.
+
+First-login username setup.
+
+Dashboard overview.
+
+Project grid and list views.
+
+Create-project flow.
+
+Project detail page.
+
+File browser and basic editor.
+
+Build logs and build status.
+
+Deployment history.
+
+Live app preview link.
+
+GitHub repository status.
+
+MCP setup guide.
+
+Connected-client management.
+
+API and domain configuration status.
+
+Usage limits.
+
+Account settings.
+
+Delete and unpublish confirmation dialogs.
+
+Display real data from the backend. Do not use hardcoded example projects in production.
+
+The MCP setup guide must explain how to configure a compatible client using the actual MCP endpoint and authorization flow.
+
+13. Reliability and developer experience
+
+Implement:
+
+TypeScript strict mode.
+
+Input validation.
+
+Consistent API response structures.
+
+Structured server-side logging.
+
+Correlation IDs for operations.
+
+Retries with backoff where appropriate.
+
+Idempotency for build and deployment requests.
+
+Database migrations.
+
+Unit tests.
+
+Integration tests.
+
+MCP tool schema tests.
+
+Authorization and cross-user isolation tests.
+
+Path traversal tests.
+
+Build and routing tests.
+
+Deployment smoke tests.
+
+CI checks through GitHub Actions.
+
+Long-running builds and deployments must not depend on a single MCP request remaining open. Return a job identifier and allow the AI to poll status until the operation completes.
+
+Implement progress updates when supported by the chosen MCP client and transport. Otherwise, use structured job status polling.
+
+14. Secrets and configuration
+
+Create .env.example containing variable names and safe descriptions, with no real secrets.
+
+Expected configuration includes:
+
+SUPABASE_URL
+
+SUPABASE_ANON_KEY
+
+SUPABASE_SERVICE_ROLE_KEY
+
+SUPABASE_JWT_ISSUER or equivalent verified issuer configuration
+
+APP_BASE_DOMAIN
+
+MCP_PUBLIC_URL
+
+GITHUB_APP_ID
+
+GITHUB_APP_CLIENT_ID
+
+GITHUB_APP_CLIENT_SECRET
+
+GITHUB_APP_PRIVATE_KEY
+
+CLOUDFLARE_ACCOUNT_ID
+
+CLOUDFLARE_API_TOKEN if required by the deployment control plane
+
+R2_BUCKET_NAME
+
+Build service configuration
+
+OAuth redirect URLs
+
+Session and token configuration
+
+Adapt the variables to the final architecture and the current providers' requirements.
+
+Use Cloudflare Worker secrets for sensitive runtime values and local secret files for development. Use GitHub Actions secrets for CI/CD credentials.
+
+Never place privileged credentials in Vite frontend variables, browser bundles, public repositories, MCP responses, logs, or user-generated applications.
+
+Provide setup instructions explaining which values are secrets and which are safe public configuration.
+
+15. Deployment workflow
+
+Implement a deployment state machine:
+
+CREATED → VALIDATING → BUILD_QUEUED → BUILDING → BUILD_SUCCEEDED → DEPLOY_QUEUED → DEPLOYING → DEPLOYED
+
+Include failure and cancellation states.
+
+The actual workflow must:
+
+Verify user identity and project ownership.
+
+Validate project files and configuration.
+
+Create an immutable source snapshot.
+
+Queue an isolated build.
+
+Build the project.
+
+Capture and sanitize logs.
+
+Validate output files.
+
+Store immutable artifacts.
+
+Update GitHub when requ
