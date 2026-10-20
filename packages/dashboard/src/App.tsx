@@ -8,6 +8,8 @@ import { LoginPage } from "./pages/LoginPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { ProjectPage } from "./pages/ProjectPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { HomePage } from "./pages/HomePage";
+import { DocsPage } from "./pages/DocsPage";
 
 type AuthState = "checking" | "signedOut" | "signedIn";
 
@@ -16,6 +18,8 @@ export function App() {
   const [me, setMe] = useState<Me | null>(null);
   const [meError, setMeError] = useState("");
   const [route, navigate] = useHashRoute();
+  const section = route[0] ?? "";
+  const param = route[1] ?? "";
 
   const refreshMe = useCallback(async () => {
     try {
@@ -35,11 +39,18 @@ export function App() {
       .auth.getSession()
       .then(({ data }) => {
         setAuth(data.session ? "signedIn" : "signedOut");
+      })
+      .catch(() => {
+        setAuth("signedOut");
       });
-    const { data: sub } = supabase().auth.onAuthStateChange((_event, session) => {
-      setAuth(session ? "signedIn" : "signedOut");
-    });
-    return () => sub.subscription.unsubscribe();
+    try {
+      const { data: sub } = supabase().auth.onAuthStateChange((_event, session) => {
+        setAuth(session ? "signedIn" : "signedOut");
+      });
+      return () => sub.subscription.unsubscribe();
+    } catch {
+      // ignore
+    }
   }, []);
 
   useEffect(() => {
@@ -55,17 +66,22 @@ export function App() {
   }
 
   if (auth === "signedOut") {
-    return <LoginPage />;
+    if (section === "docs") return <DocsPage onBack={() => navigate(["home"])} />;
+    if (section === "login" || section === "signup") return <LoginPage />;
+    return <HomePage onGetStarted={() => navigate(["login"])} />;
   }
-
-  const section = route[0] ?? "";
-  const param = route[1] ?? "";
 
   let page: ReactNode;
   if (section === "projects" && param) {
     page = <ProjectPage projectRef={param} onBack={() => navigate(["projects"])} />;
   } else if (section === "settings") {
     page = <SettingsPage me={me} />;
+  } else if (section === "docs") {
+    page = <DocsPage onBack={() => navigate([""])} />;
+  } else if (section === "login" || section === "signup") {
+    page = <LoginPage />;
+  } else if (section === "" || section === "home") {
+    page = <HomePage onGetStarted={() => navigate(["login"])} />;
   } else {
     page = <ProjectsPage onOpen={(slug) => navigate(["projects", slug])} />;
   }
@@ -77,8 +93,11 @@ export function App() {
           LemonAIde
         </a>
         <nav className="topnav">
-          <a href="#/" className={`toplink${section !== "settings" ? " active" : ""}`}>
+          <a href="#/" className={`toplink${section !== "settings" && section !== "docs" ? " active" : ""}`}>
             Projects
+          </a>
+          <a href="#/docs" className={`toplink${section === "docs" ? " active" : ""}`}>
+            Docs
           </a>
           <a href="#/settings" className={`toplink${section === "settings" ? " active" : ""}`}>
             Settings

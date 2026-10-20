@@ -41,6 +41,9 @@ interface Jwk {
   kid?: string;
   n?: string;
   e?: string;
+  crv?: string;
+  x?: string;
+  y?: string;
   alg?: string;
   use?: string;
 }
@@ -81,6 +84,16 @@ async function importHmacKey(secret: string): Promise<CryptoKey> {
   );
 }
 
+async function importEcKey(jwk: Jwk): Promise<CryptoKey> {
+  return crypto.subtle.importKey(
+    "jwk",
+    { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y, ext: true },
+    { name: "ECDSA", namedCurve: "P-256" },
+    false,
+    ["verify"],
+  );
+}
+
 export interface VerifyOptions {
   supabaseUrl: string;
   /** Optional HS256 shared secret (project JWT secret). */
@@ -108,14 +121,18 @@ export async function verifySupabaseJwt(token: string, opts: VerifyOptions): Pro
   const signature = b64urlToBytes(signatureB64);
 
   let valid = false;
-  if (header.alg === "RS256") {
+  if (header.alg === "RS256" || header.alg === "ES256") {
     const jwksUrl = `${opts.supabaseUrl.replace(/\/+$/, "")}/auth/v1/.well-known/jwks.json`;
     const keys = await fetchJwks(jwksUrl);
     const candidates = header.kid ? keys.filter((k) => k.kid === header.kid) : keys;
+    const wantKty = header.alg === "ES256" ? "EC" : "RSA";
     for (const jwk of candidates) {
-      if (jwk.kty !== "RSA") continue;
-      const key = await importRsaKey(jwk);
-      valid = await crypto.subtle.verify({ name: "RSASSA-PKCS1-v1_5" }, key, signature as BufferSource, data);
+      if (jwk.kty !== wantKty) continue;
+      const key = jwk.kty === "EC" ? await importEcKey(jwk) : await importRsaKey(jwk);
+      const alg = jwk.kty === "EC"
+        ? ({ name: "ECDSA", hash: "SHA-256" } as EcdsaParams)
+        : ({ name: "RSASSA-PKCS1-v1_5" } as AlgorithmIdentifier);
+      valid = await crypto.subtle.verify(alg, key, signature as BufferSource, data);
       if (valid) break;
     }
   } else if (header.alg === "HS256") {

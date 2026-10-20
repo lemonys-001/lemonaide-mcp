@@ -1,15 +1,19 @@
 import { useState } from "react";
 import { supabase, supabaseConfigured } from "../lib/supabase";
+import { api } from "../lib/api";
 import { Button, ErrorBanner, Field, Input, Notice } from "../components/ui";
 
 export function LoginPage() {
   const [mode, setMode] = useState<"login" | "signup">("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [password2, setPassword2] = useState("");
   const [username, setUsername] = useState("");
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [usernameHint, setUsernameHint] = useState<string>("");
 
   if (!supabaseConfigured) {
     return (
@@ -35,8 +39,16 @@ export function LoginPage() {
     }
     if (mode === "signup") {
       const slug = username.trim().toLowerCase();
-      if (slug && !/^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])?$/.test(slug)) {
+      if (!slug) {
+        setError("Username is required.");
+        return;
+      }
+      if (slug.length < 3 || slug.length > 30 || !/^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])?$/.test(slug)) {
         setError("Username must be 3–30 chars: a–z, 0–9, hyphens (no leading/trailing hyphen).");
+        return;
+      }
+      if (password !== password2) {
+        setError("Passwords do not match.");
         return;
       }
     }
@@ -79,13 +91,60 @@ export function LoginPage() {
             <Input value={email} onChange={setEmail} placeholder="you@example.com" type="email" autoFocus />
           </Field>
           {mode === "signup" && (
-            <Field label="Username" hint="Public URL: your-platform.dev/username/app">
-              <Input value={username} onChange={setUsername} placeholder="myname" />
+            <Field label="Username" hint={usernameHint || "Public URL: your-platform.dev/username/app"}>
+              <div style={{ display: "flex", gap: 8 }}>
+                <Input
+                  value={username}
+                  onChange={(v) => {
+                    setUsername(v);
+                    if (usernameHint) setUsernameHint("");
+                  }}
+                  placeholder="myname"
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  small
+                  onClick={async () => {
+                    const slug = username.trim().toLowerCase();
+                    if (!slug) {
+                      setUsernameHint("Enter a username to check.");
+                      return;
+                    }
+                    try {
+                      const res = await api.usernameAvailable(slug);
+                      setUsernameHint(
+                        res.available
+                          ? "✓ Available"
+                          : res.reason === "taken"
+                          ? "✗ Taken"
+                          : res.reason === "reserved"
+                          ? "✗ Reserved"
+                          : "✗ Invalid",
+                      );
+                    } catch (e) {
+                      setUsernameHint("Could not check availability");
+                    }
+                  }}
+                >
+                  Check
+                </Button>
+              </div>
             </Field>
           )}
           <Field label="Password" hint={mode === "signup" ? "At least 8 characters." : undefined}>
-            <Input value={password} onChange={setPassword} type="password" onEnter={submit} />
+            <div style={{ display: "flex", gap: 8 }}>
+              <Input value={password} onChange={setPassword} type={showPassword ? "text" : "password"} onEnter={submit} />
+              <Button type="button" variant="ghost" small onClick={() => setShowPassword((s) => !s)}>
+                {showPassword ? "Hide" : "Show"}
+              </Button>
+            </div>
           </Field>
+          {mode === "signup" && (
+            <Field label="Retype Password">
+              <Input value={password2} onChange={setPassword2} type={showPassword ? "text" : "password"} onEnter={submit} />
+            </Field>
+          )}
           <Button onClick={submit} disabled={busy} type="button">
             {busy ? "Working…" : mode === "login" ? "Sign in" : "Create account"}
           </Button>

@@ -129,6 +129,13 @@ export interface ValidationIssue {
 
 export const api = {
   me: () => request<Me>("GET", "/api/me"),
+  usernameAvailable: (username: string) =>
+    request<{ username: string; available: boolean; reason?: "invalid" | "reserved" | "taken" }>(
+      "GET",
+      "/api/username-available",
+      undefined,
+      { username },
+    ),
 
   listProjects: (status = "active") => request<Project[]>("GET", "/api/projects", undefined, { status }),
   createProject: (input: { name: string; description?: string; framework?: string; slug?: string }) =>

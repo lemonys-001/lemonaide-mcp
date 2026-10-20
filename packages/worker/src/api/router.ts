@@ -123,6 +123,37 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
   });
 
   /* ---------------------------------------------------------------- */
+  /* Public endpoints (no auth)                                        */
+  /* ---------------------------------------------------------------- */
+
+  const USERNAME_RE = /^[a-z0-9](?:[a-z0-9-]{1,28}[a-z0-9])?$/;
+  const RESERVED_USERNAMES = new Set([
+    "api", "mcp", "oauth", "auth", "assets", "static", "app", "apps",
+    "dashboard", "admin", "health", "login", "logout", "callback", "authorize",
+    "register", "token", "www", "mail", "support", "help", "docs", "blog",
+    "settings", "account", "projects", "lemonaide", "lemonai", "null",
+    "undefined", "internal", "worker", "build", "builds", "deploy", "deploys",
+  ]);
+
+  app.get("/username-available", async (c) => {
+    const username = (c.req.query("username") ?? "").trim().toLowerCase();
+    if (!USERNAME_RE.test(username)) {
+      return jsonOk({ username, available: false, reason: "invalid" as const }, newCorrelationId());
+    }
+    if (RESERVED_USERNAMES.has(username)) {
+      return jsonOk({ username, available: false, reason: "reserved" as const }, newCorrelationId());
+    }
+    const db = getSupabaseServiceClient(env);
+    const { data, error } = await db.from("profiles").select("id").ilike("username", username).limit(1);
+    if (error) throw new LemonAIdeError(ErrorCode.INTERNAL, error.message);
+    const taken = (data ?? []).length > 0;
+    return jsonOk(
+      { username, available: !taken, reason: taken ? ("taken" as const) : undefined },
+      newCorrelationId(),
+    );
+  });
+
+  /* ---------------------------------------------------------------- */
   /* Dashboard API (user auth)                                         */
   /* ---------------------------------------------------------------- */
 
