@@ -37,9 +37,15 @@ export function requireWriteScope(ctx: ToolContext): void {
   }
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 export async function resolveProject(ctx: ToolContext, ref: string): Promise<repos.Project> {
-  const byId = await repos.getProject(ctx.db, ctx.user.userId, ref);
-  if (byId) return byId;
+  // Only query as id when the ref is uuid-shaped; PostgREST errors on a
+  // non-uuid compared against a uuid column, which would break slug lookups.
+  if (UUID_RE.test(ref)) {
+    const byId = await repos.getProject(ctx.db, ctx.user.userId, ref);
+    if (byId) return byId;
+  }
   const bySlug = await repos.getProjectBySlug(ctx.db, ctx.user.userId, ref);
   if (bySlug) return bySlug;
   throw new LemonAIdeError(ErrorCode.NOT_FOUND, `no project named "${ref}" — use list_projects to see yours`);
