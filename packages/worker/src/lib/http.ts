@@ -47,6 +47,9 @@ export function htmlPage(title: string, body: string, status = 200): Response {
   button.ghost { background:transparent; color:var(--fg); }
   .scopes { background:#0f140c; border:1px solid var(--line); border-radius:8px; padding:10px 12px; font-size:13px; color:var(--muted); }
   .scopes code { color:var(--accent); }
+  input[type="email"], input[type="password"] { font:inherit; color:var(--fg); background:#0f140c; border:1px solid var(--line); border-radius:8px; padding:10px 12px; width:100%; }
+  input[type="email"]:focus, input[type="password"]:focus { outline:1px solid var(--accent); }
+  label { margin:0; }
   .brand { font-size:13px; letter-spacing:.14em; text-transform:uppercase; color:var(--accent); margin-bottom:14px; }
   .warn { color:#e6c14a; }
 </style>

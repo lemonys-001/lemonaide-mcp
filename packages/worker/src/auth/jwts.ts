@@ -130,8 +130,8 @@ export async function verifySupabaseJwt(token: string, opts: VerifyOptions): Pro
       if (jwk.kty !== wantKty) continue;
       const key = jwk.kty === "EC" ? await importEcKey(jwk) : await importRsaKey(jwk);
       const alg = jwk.kty === "EC"
-        ? ({ name: "ECDSA", hash: "SHA-256" } as EcdsaParams)
-        : ({ name: "RSASSA-PKCS1-v1_5" } as AlgorithmIdentifier);
+        ? { name: "ECDSA", hash: "SHA-256" }
+        : { name: "RSASSA-PKCS1-v1_5" };
       valid = await crypto.subtle.verify(alg, key, signature as BufferSource, data);
       if (valid) break;
     }

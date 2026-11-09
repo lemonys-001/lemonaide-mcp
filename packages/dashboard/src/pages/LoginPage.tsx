@@ -122,7 +122,7 @@ export function LoginPage() {
                           ? "✗ Reserved"
                           : "✗ Invalid",
                       );
-                    } catch (e) {
+                    } catch {
                       setUsernameHint("Could not check availability");
                     }
                   }}

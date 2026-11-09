@@ -3,8 +3,8 @@
  *
  * Single-worker topology:
  *   /mcp                  MCP Streamable HTTP (OAuthProvider apiRoute → apiHandler)
- *   /authorize, /oauth/*  OAuth 2.1 AS owned by workers-oauth-provider + our
- *                         consent/upstream-sign-in (Supabase as IdP)
+ *   /authorize            OAuth 2.1 consent + sign-in page (Supabase
+ *                         email/password grant; provider owns the AS)
  *   /api/*                Dashboard REST + build-runner internals
  *   /{username}/{slug}/*  Published static apps
  *   everything else       Dashboard SPA (assets binding)
@@ -15,7 +15,7 @@ import type { Env } from "./env";
 import { createMcpApiHandler } from "./mcp/server";
 import { createApiRouter } from "./api/router";
 import { isReservedTopLevel, servePublishedApp } from "./app-router";
-import { handleAuthorizeGet, handleAuthorizePost, handleOauthCallback } from "./auth/authorize";
+import { handleAuthorizeGet, handleAuthorizePost } from "./auth/authorize";
 import { dispatchBuild } from "./services/builds";
 import { getSupabaseServiceClient } from "./db/supabase";
 
@@ -37,6 +37,11 @@ function buildProvider(env: Env): OAuthProvider<Env> {
     requiredScopes: ["mcp:read"],
     scopesSupported: [...SCOPES_SUPPORTED],
     accessTokenTTL: 3600,
+    // MCP client onboarding: DCR works for all MCP SDK-based clients
+    // (Claude, OpenCode, Cursor, …); CIMD covers clients that prefer
+    // Client ID Metadata Documents.
+    clientRegistrationEndpoint: "/oauth/register",
+    clientIdMetadataDocumentEnabled: true,
     // Upstream (Supabase) refresh: keep the user's grant alive across MCP sessions.
     tokenExchangeCallback: async ({ grantType, props }) => {
       if (grantType !== "refresh_token") return;
@@ -73,10 +78,6 @@ const defaultHandler = {
 
     if (path === "/authorize" && (request.method === "GET" || request.method === "POST")) {
       return request.method === "GET" ? handleAuthorizeGet(request, env) : handleAuthorizePost(request, env);
-    }
-
-    if (path === "/oauth/callback") {
-      return handleOauthCallback(request, env);
     }
 
     if (path === "/api" || path.startsWith("/api/")) {
