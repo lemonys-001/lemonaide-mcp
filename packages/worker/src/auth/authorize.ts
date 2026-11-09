@@ -10,7 +10,12 @@
  */
 
 import { AuthorizationError } from "@cloudflare/workers-oauth-provider";
-import { SupabaseAuthError, supabasePasswordGrant } from "./supabase-upstream";
+import {
+  SupabaseAuthError,
+  supabasePasswordGrant,
+  supabaseSignupGrant,
+  type SupabaseSession,
+} from "./supabase-upstream";
 import type { Env } from "../env";
 import { isProduction } from "../env";
 import { getSupabaseServiceClient } from "../db/supabase";
@@ -187,7 +192,22 @@ export async function handleAuthorizePost(request: Request, env: Env): Promise<R
       return renderError("Sign-in required", "Email and password are required to connect.");
     }
 
-    const session = await supabasePasswordGrant(env, email, password);
+    let session: SupabaseSession;
+    try {
+      session = await supabasePasswordGrant(env, email, password);
+    } catch {
+      // No account yet? Migrate-onboarding path: create it, then continue.
+      try {
+        session = await supabaseSignupGrant(env, email, password);
+      } catch (signupErr) {
+        return renderError(
+          "Sign-in failed",
+          signupErr instanceof SupabaseAuthError
+            ? signupErr.message
+            : "Email or password is incorrect. Create your account on the dashboard first if needed.",
+        );
+      }
+    }
     const db = getSupabaseServiceClient(env);
     const meta = session.user.user_metadata as Record<string, unknown> | undefined;
     const profile = await ensureProfile(db, session.user.id, {
