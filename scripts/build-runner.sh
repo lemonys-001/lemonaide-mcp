@@ -73,6 +73,10 @@ curl -sfS -A "lemonaide-build-runner/1.0" -H "authorization: Bearer $BUILD_RUNNE
 python3 - "$RUNNER_TEMP/bundle.json" "$WORKDIR" <<'PY'
 import json, os, sys
 bundle = json.load(open(sys.argv[1]))
+if isinstance(bundle, dict) and "data" in bundle and "files" not in bundle:
+    bundle = bundle["data"]
+    with open(sys.argv[1], "w", encoding="utf-8") as fh:  # keep later steps on the flat shape
+        json.dump(bundle, fh)
 root = sys.argv[2]
 for f in bundle["files"]:
     dest = os.path.join(root, f["path"])
