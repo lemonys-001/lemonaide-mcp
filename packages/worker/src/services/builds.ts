@@ -134,6 +134,8 @@ async function dispatchGitHubActionsWorkflow(env: Env, buildId: string): Promise
   const res = await fetch(url, {
     method: "POST",
     headers: {
+      // GitHub requires a user-agent; Workers fetch sends none by default.
+      "user-agent": "lemonaide-mcp-worker",
       accept: "application/vnd.github+json",
       authorization: `Bearer ${token}`,
       "x-gitHub-api-version": "2022-11-28",
@@ -165,7 +167,7 @@ async function platformToken(env: Env, owner: string, repo: string): Promise<str
   const appJwt = await createAppJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
   const installRes = await fetch(
     `https://api.github.com/app/installations?per_page=100`,
-    { headers: { accept: "application/vnd.github+json", authorization: `Bearer ${appJwt}` } },
+    { headers: { "user-agent": "lemonaide-mcp-worker", accept: "application/vnd.github+json", authorization: `Bearer ${appJwt}` } },
   );
   if (!installRes.ok) throw new Error(`list installations ${installRes.status}`);
   const installations = (await installRes.json()) as { id: number; repository_selection: string }[];
@@ -174,12 +176,12 @@ async function platformToken(env: Env, owner: string, repo: string): Promise<str
   for (const installation of installations) {
     const tokRes = await fetch(`https://api.github.com/app/installations/${installation.id}/access_tokens`, {
       method: "POST",
-      headers: { accept: "application/vnd.github+json", authorization: `Bearer ${appJwt}` },
+      headers: { "user-agent": "lemonaide-mcp-worker", accept: "application/vnd.github+json", authorization: `Bearer ${appJwt}` },
     });
     if (!tokRes.ok) continue;
     const tok = (await tokRes.json()) as { token: string };
     const repoCheck = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
-      headers: { accept: "application/vnd.github+json", authorization: `Bearer ${tok.token}` },
+      headers: { "user-agent": "lemonaide-mcp-worker", accept: "application/vnd.github+json", authorization: `Bearer ${tok.token}` },
     });
     if (repoCheck.ok) return tok.token;
   }

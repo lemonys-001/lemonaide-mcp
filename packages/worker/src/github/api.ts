@@ -31,6 +31,8 @@ export async function githubFetch(path: string, opts: GithubRequestOptions): Pro
   const res = await fetch(url, {
     method: opts.method ?? "GET",
     headers: {
+      // GitHub requires a user-agent; Workers fetch sends none by default.
+      "user-agent": "lemonaide-mcp-worker",
       accept: opts.accept ?? "application/vnd.github+json",
       authorization: `Bearer ${opts.token}`,
       "x-github-api-version": API_VERSION,
