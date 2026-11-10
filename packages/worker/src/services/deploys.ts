@@ -110,8 +110,8 @@ export async function deployProject(
     throw new LemonAIdeError(ErrorCode.CONFLICT, "could not allocate a deployment number", { retryable: true });
   }
 
-  await repos.updateDeployment(db, deployment.id, { status: "deploying" });
-
+  // promote_deployment accepts pending/deployed only — the RPC flips the
+  // status to 'deployed' itself, so keep the row at its initial 'pending'.
   try {
     await repos.promoteDeployment(db, deployment.id, actor.userId);
     await repos.updateDeployment(db, deployment.id, {
