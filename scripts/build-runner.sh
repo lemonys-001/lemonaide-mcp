@@ -25,7 +25,7 @@ body = json.dumps({"content": content}).encode()
 req = urllib.request.Request(
     os.environ["API"] + "/logs",
     data=body,
-    headers={"content-type": "application/json", "authorization": "Bearer " + os.environ["BUILD_RUNNER_TOKEN"]},
+    headers={"content-type": "application/json", "authorization": "Bearer " + os.environ["BUILD_RUNNER_TOKEN"], "user-agent": "lemonaide-build-runner/1.0"},
     method="POST",
 )
 try:
@@ -44,7 +44,7 @@ body = json.dumps({"status": sys.argv[1], "error_code": "BUILD_FAILED", "error_m
 req = urllib.request.Request(
     os.environ["API"] + "/complete",
     data=body,
-    headers={"content-type": "application/json", "authorization": "Bearer " + os.environ["BUILD_RUNNER_TOKEN"]},
+    headers={"content-type": "application/json", "authorization": "Bearer " + os.environ["BUILD_RUNNER_TOKEN"], "user-agent": "lemonaide-build-runner/1.0"},
     method="POST",
 )
 urllib.request.urlopen(req, timeout=30)
@@ -60,14 +60,14 @@ import json, os, urllib.request
 req = urllib.request.Request(
     os.environ["API"] + "/start",
     data=json.dumps({"runner_run_id": int(os.environ.get("GITHUB_RUN_ID") or 0)}).encode(),
-    headers={"content-type": "application/json", "authorization": "Bearer " + os.environ["BUILD_RUNNER_TOKEN"]},
+    headers={"content-type": "application/json", "authorization": "Bearer " + os.environ["BUILD_RUNNER_TOKEN"], "user-agent": "lemonaide-build-runner/1.0"},
     method="POST",
 )
 urllib.request.urlopen(req, timeout=30)
 PY
 
 # ── fetch source snapshot ────────────────────────────────────────────
-curl -sfS -H "authorization: Bearer $BUILD_RUNNER_TOKEN" "$API/source" -o "$RUNNER_TEMP/bundle.json" \
+curl -sfS -A "lemonaide-build-runner/1.0" -H "authorization: Bearer $BUILD_RUNNER_TOKEN" "$API/source" -o "$RUNNER_TEMP/bundle.json" \
   || fail "failed to download source bundle"
 
 python3 - "$RUNNER_TEMP/bundle.json" "$WORKDIR" <<'PY'
@@ -135,7 +135,7 @@ for i in range(0, len(files), BATCH):
     req = urllib.request.Request(
         API + "/artifacts",
         data=body,
-        headers={"content-type": "application/json", "authorization": "Bearer " + TOKEN},
+        headers={"content-type": "application/json", "authorization": "Bearer " + TOKEN, "user-agent": "lemonaide-build-runner/1.0"},
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=120) as res:
@@ -149,7 +149,7 @@ body = json.dumps({"status": "succeeded"}).encode()
 req = urllib.request.Request(
     os.environ["API"] + "/complete",
     data=body,
-    headers={"content-type": "application/json", "authorization": "Bearer " + os.environ["BUILD_RUNNER_TOKEN"]},
+    headers={"content-type": "application/json", "authorization": "Bearer " + os.environ["BUILD_RUNNER_TOKEN"], "user-agent": "lemonaide-build-runner/1.0"},
     method="POST",
 )
 urllib.request.urlopen(req, timeout=30)
