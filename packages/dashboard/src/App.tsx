@@ -57,6 +57,13 @@ export function App() {
     if (auth === "signedIn") void refreshMe();
   }, [auth, refreshMe]);
 
+  // After sign-in the hash is usually still #/login — go to Projects instead.
+  useEffect(() => {
+    if (auth === "signedIn" && (section === "login" || section === "signup")) {
+      navigate(["projects"]);
+    }
+  }, [auth, section, navigate]);
+
   if (auth === "checking") {
     return (
       <main className="auth-shell">

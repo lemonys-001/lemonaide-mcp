@@ -47,6 +47,10 @@ export function ProjectsPage({ onOpen }: { onOpen: (slug: string) => void }) {
     }
   }
 
+  const list = projects ?? [];
+  const published = list.filter((p) => p.currentDeployment?.isCurrent && p.currentDeployment.status === "deployed").length;
+  const lastActivity = list.length ? list.map((p) => p.updated_at).sort().at(-1)! : null;
+
   return (
     <section>
       <header className="page-head">
@@ -56,6 +60,22 @@ export function ProjectsPage({ onOpen }: { onOpen: (slug: string) => void }) {
         </div>
         <Button onClick={() => setCreating((v) => !v)}>{creating ? "Cancel" : "+ New project"}</Button>
       </header>
+
+      {projects !== null && list.length > 0 && (
+        <div className="stat-strip" role="status">
+          <span>
+            <strong>{list.length}</strong> project{list.length === 1 ? "" : "s"}
+          </span>
+          <span>
+            <strong>{published}</strong> published
+          </span>
+          {lastActivity && (
+            <span>
+              last activity <strong>{timeAgo(lastActivity)}</strong>
+            </span>
+          )}
+        </div>
+      )}
 
       <ErrorBanner message={error} onDismiss={() => setError("")} />
 
@@ -94,20 +114,30 @@ export function ProjectsPage({ onOpen }: { onOpen: (slug: string) => void }) {
         />
       ) : (
         <div className="project-grid">
-          {projects.map((p) => (
-            <button key={p.id} className="project-card" onClick={() => onOpen(p.slug)}>
-              <div className="row between">
-                <strong>{p.name}</strong>
-                <Badge tone={buildTone(p.status)}>{p.status}</Badge>
+          {list.map((p) => {
+            const live = p.currentDeployment?.isCurrent && p.currentDeployment.status === "deployed" ? p.liveUrl : null;
+            return (
+              <div key={p.id} className="project-card">
+                <button className="project-open" onClick={() => onOpen(p.slug)}>
+                  <div className="row between">
+                    <strong>{p.name}</strong>
+                    <Badge tone={buildTone(p.status)}>{p.status}</Badge>
+                  </div>
+                  <code className="muted">/{p.slug}</code>
+                </button>
+                <div className="row gap muted small project-meta">
+                  <span>{p.framework}</span>
+                  <span>·</span>
+                  <span>{timeAgo(p.updated_at)}</span>
+                  {live && (
+                    <a href={live} target="_blank" rel="noreferrer">
+                      View live ↗
+                    </a>
+                  )}
+                </div>
               </div>
-              <code className="muted">/{p.slug}</code>
-              <div className="row gap muted small">
-                <span>{p.framework}</span>
-                <span>·</span>
-                <span>{timeAgo(p.updated_at)}</span>
-              </div>
-            </button>
-          ))}
+            );
+          })}
         </div>
       )}
     </section>

@@ -204,8 +204,16 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
     const db = getSupabaseServiceClient(env);
     const status = (c.req.query("status") as "active" | "archived" | "all" | undefined) ?? "active";
     const projects = await repos.listProjects(db, user.userId, { status });
+    const currentByProject = await repos.listCurrentDeployments(
+      db,
+      projects.map((p) => p.id),
+    );
     return jsonOk(
-      projects.map((p) => ({ ...p, liveUrl: liveUrlFor(env, user.username, p.slug) })),
+      projects.map((p) => ({
+        ...p,
+        liveUrl: liveUrlFor(env, user.username, p.slug),
+        currentDeployment: currentByProject.has(p.id) ? describeDeployment(currentByProject.get(p.id)!) : null,
+      })),
       newCorrelationId(),
     );
   });

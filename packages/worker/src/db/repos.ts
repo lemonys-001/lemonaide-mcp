@@ -566,6 +566,23 @@ export async function getCurrentDeploymentByProject(
   return (data as DeploymentRow | null) ?? null;
 }
 
+/** Current deployment per project, for the dashboard project list. */
+export async function listCurrentDeployments(
+  db: SupabaseClient,
+  projectIds: string[],
+): Promise<Map<string, DeploymentRow>> {
+  if (projectIds.length === 0) return new Map();
+  const { data, error } = await db
+    .from("deployments")
+    .select("*")
+    .in("project_id", projectIds)
+    .eq("is_current", true);
+  if (error) throw new LemonAIdeError(ErrorCode.INTERNAL, "failed to load current deployments", { cause: error });
+  const map = new Map<string, DeploymentRow>();
+  for (const row of (data ?? []) as DeploymentRow[]) map.set(row.project_id, row);
+  return map;
+}
+
 /** Public lookup used by the domain router: (username, slug) → current deployment. */
 export async function lookupLiveDeployment(
   db: SupabaseClient,
