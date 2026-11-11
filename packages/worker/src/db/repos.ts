@@ -804,11 +804,11 @@ export async function listMcpAuthorizations(db: SupabaseClient, userId: string):
   return (data ?? []) as McpAuthorizationRow[];
 }
 
-export async function revokeMcpAuthorization(db: SupabaseClient, userId: string, id: string): Promise<boolean> {
+export async function revokeMcpAuthorization(db: SupabaseClient, userId: string, grantId: string): Promise<boolean> {
   const { data, error } = await db
     .from("mcp_authorizations")
     .update({ revoked_at: new Date().toISOString() })
-    .eq("id", id)
+    .eq("grant_id", grantId)
     .eq("user_id", userId)
     .is("revoked_at", null)
     .select("id, grant_id");
