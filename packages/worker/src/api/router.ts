@@ -16,6 +16,7 @@ import { getSupabaseServiceClient } from "../db/supabase";
 import { ensureProfile, getProfile, recordAudit } from "../db/profiles";
 import * as repos from "../db/repos";
 import { jsonErr, jsonOk, newCorrelationId } from "../lib/http";
+import { supabasePasswordGrant } from "../auth/supabase-upstream";
 import {
   createProject,
   deleteProjectFully,
@@ -163,7 +164,8 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
     //  - GitHub webhook: X-Hub-Signature-256 HMAC over the raw body
     if (
       (c.req.method === "GET" && c.req.path === "/api/github/callback") ||
-      (c.req.method === "POST" && c.req.path === "/api/github/webhook")
+      (c.req.method === "POST" && c.req.path === "/api/github/webhook") ||
+      (c.req.method === "POST" && c.req.path === "/api/auth/session-bootstrap")
     ) {
       await next();
       return;
@@ -176,6 +178,37 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
       const status = err instanceof JwtVerificationError ? 401 : err instanceof LemonAIdeError ? httpStatusForErrorCode(err.code) : 500;
       const code = err instanceof JwtVerificationError ? ErrorCode.UNAUTHENTICATED : err instanceof LemonAIdeError ? err.code : ErrorCode.INTERNAL;
       return jsonErr(code, err instanceof Error ? err.message : String(err), newCorrelationId(), status);
+    }
+  });
+
+  /* Public: exchange email+password for a browser-storable Supabase session.
+     Used by the MCP consent page so the dashboard recognizes the same login.
+     Same trust level as supabase-js calling the GoTrue endpoint directly. */
+  app.post("/auth/session-bootstrap", async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { email?: string; password?: string };
+    const email = String(body.email ?? "").trim();
+    const password = String(body.password ?? "");
+    if (!email || !password) {
+      return jsonErr(ErrorCode.INVALID_INPUT, "email and password are required", newCorrelationId(), 400);
+    }
+    try {
+      const session = await supabasePasswordGrant(env, email, password);
+      return jsonOk(
+        {
+          access_token: session.access_token,
+          refresh_token: session.refresh_token ?? null,
+          expires_in: (session as { expires_in?: number }).expires_in ?? 3600,
+          user: session.user,
+        },
+        newCorrelationId(),
+      );
+    } catch (err) {
+      return jsonErr(
+        ErrorCode.UNAUTHENTICATED,
+        err instanceof Error ? err.message : "invalid email or password",
+        newCorrelationId(),
+        401,
+      );
     }
   });
 

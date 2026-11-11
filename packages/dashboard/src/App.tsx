@@ -57,9 +57,9 @@ export function App() {
     if (auth === "signedIn") void refreshMe();
   }, [auth, refreshMe]);
 
-  // After sign-in the hash is usually still #/login — go to Projects instead.
+  // After sign-in skip the login/marketing pages — go straight to Projects.
   useEffect(() => {
-    if (auth === "signedIn" && (section === "login" || section === "signup")) {
+    if (auth === "signedIn" && (section === "login" || section === "signup" || section === "" || section === "home")) {
       navigate(["projects"]);
     }
   }, [auth, section, navigate]);

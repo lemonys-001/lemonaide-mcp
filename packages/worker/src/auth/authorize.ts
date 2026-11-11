@@ -140,7 +140,45 @@ ${localhost ? `<p class="warn">This redirect goes to localhost — a local app o
     ${devSkip}
     <button class="ghost" type="submit" name="deny" value="1" formnovalidate>Cancel</button>
   </div>
-</form>`;
+</form>
+<script>
+(function () {
+  var form = document.querySelector("form[action='/authorize']");
+  if (!form) return;
+  var supabaseRef = ${JSON.stringify(new URL(env.SUPABASE_URL).hostname.split(".")[0])};
+  form.addEventListener("submit", function (ev) {
+    var deny = form.querySelector("button[name='deny']");
+    if (deny && ev.submitter === deny) return;
+    ev.preventDefault();
+    var email = form.querySelector("input[name='email']").value.trim();
+    var password = form.querySelector("input[name='password']").value;
+    var finish = function () { form.submit(); };
+    var boot = fetch("/api/auth/session-bootstrap", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ email: email, password: password }),
+    })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (payload) {
+        if (!payload || !payload.data || !payload.data.access_token) return;
+        var s = payload.data;
+        localStorage.setItem(
+          "sb-" + supabaseRef + "-auth-token",
+          JSON.stringify({
+            access_token: s.access_token,
+            refresh_token: s.refresh_token,
+            token_type: "bearer",
+            expires_in: s.expires_in,
+            expires_at: Math.floor(Date.now() / 1000) + (s.expires_in || 3600),
+            user: s.user,
+          }),
+        );
+      })
+      .catch(function () {});
+    Promise.race([boot, new Promise(function (r) { setTimeout(r, 2500); })]).then(finish);
+  });
+})();
+</script>`;
 
   const page = htmlPage("Authorize", body);
   const merged = new Headers(page.headers);
