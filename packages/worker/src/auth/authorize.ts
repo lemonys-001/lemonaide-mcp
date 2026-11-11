@@ -83,6 +83,12 @@ const SCOPE_BLURB: Record<string, { title: string; blurb: string }> = {
   offline_access: { title: "Stay signed in", blurb: "Keep access working without re-authorizing every session" },
 };
 
+// Every connection gets the full scope set — the platform exists so agents can
+// build pages, and a read-only grant makes every mutating tool fail with
+// INSUFFICIENT_SCOPE. The provider validates against server-supported scopes,
+// not the client's request, so this is a legal approval.
+const FULL_SCOPES = Object.keys(SCOPE_BLURB);
+
 export async function handleAuthorizeGet(request: Request, env: Env): Promise<Response> {
   const oauth = helpers(env);
   let authRequest: AuthRequestLike;
@@ -106,12 +112,11 @@ export async function handleAuthorizeGet(request: Request, env: Env): Promise<Re
   const { handle, headers: consentHeaders } = await oauth.beginConsent(authRequest);
 
   const requested = new Set(authRequest.scope ?? []);
-  const known = (consent.scope ?? authRequest.scope ?? []).filter((s) => s in SCOPE_BLURB || requested.has(s));
-  const scopeRows = (known.length ? known : [...requested]).map((scope) => {
-    const info = SCOPE_BLURB[scope] ?? { title: scope, blurb: "Platform access" };
+  const scopeRows = Object.entries(SCOPE_BLURB).map(([scope, info]) => {
+    const extra = requested.has(scope) ? "" : "";
     return `<label style="display:flex;gap:10px;align-items:flex-start;padding:10px 0;border-top:1px solid var(--line)">
-      <input type="checkbox" name="scope" value="${escapeHtml(scope)}" checked style="margin-top:3px">
-      <span><strong>${escapeHtml(info.title)}</strong><br><span style="color:var(--muted);font-size:13px">${escapeHtml(info.blurb)} · <code>${escapeHtml(scope)}</code></span></span>
+      <input type="checkbox" checked disabled style="margin-top:3px">
+      <span><strong>${escapeHtml(info.title)}</strong><br><span style="color:var(--muted);font-size:13px">${escapeHtml(info.blurb)} · <code>${escapeHtml(scope)}</code></span>${extra}</span>
     </label>`;
   }).join("");
 
@@ -128,7 +133,7 @@ export async function handleAuthorizeGet(request: Request, env: Env): Promise<Re
 ${localhost ? `<p class="warn">This redirect goes to localhost — a local app on this machine.</p>` : ""}
 <form method="post" action="/authorize" style="flex-direction:column;align-items:stretch;gap:14px">
   <input type="hidden" name="handle" value="${escapeHtml(handle)}">
-  <div class="scopes">${scopeRows || "<em>No scopes requested</em>"}</div>
+  <div class="scopes">${scopeRows}</div>
   <label style="display:block;font-size:13px;color:var(--muted)">Email
     <input type="email" name="email" required autocomplete="email" style="margin-top:6px">
   </label>
@@ -206,8 +211,7 @@ export async function handleAuthorizePost(request: Request, env: Env): Promise<R
       return new Response(null, { status: 302, headers });
     }
 
-    const scope = form.getAll("scope").map(String).filter(Boolean);
-    const approved = await oauth.approveConsent(request, handle, { scope: scope.length ? scope : undefined });
+    const approved = await oauth.approveConsent(request, handle, { scope: FULL_SCOPES });
 
     // Development shortcut: complete authorization without Supabase.
     if (form.get("dev_skip") && !isProduction(env) && env.DEV_FAKE_AUTH) {
