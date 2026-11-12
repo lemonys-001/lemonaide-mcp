@@ -58,7 +58,7 @@ export function ProjectPage({ projectRef, onBack }: { projectRef: string; onBack
     { id: "files", label: "Files" },
     { id: "builds", label: "Builds" },
     { id: "deployments", label: "Deployments" },
-    { id: "settings", label: "Settings & GitHub" },
+    { id: "settings", label: "Settings" },
   ];
 
   return (
@@ -542,7 +542,7 @@ function DeploymentsTab({
 }
 
 /* ------------------------------------------------------------------ */
-/* Settings & GitHub                                                   */
+/* Settings                                                            */
 /* ------------------------------------------------------------------ */
 
 function SettingsTab({ project, onChanged, onError }: { project: Project; onChanged: () => void; onError: (msg: string) => void }) {
