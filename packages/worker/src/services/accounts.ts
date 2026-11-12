@@ -6,9 +6,9 @@
  * KV blobs (src/, build artifacts) are left as harmless orphans.
  */
 
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { ErrorCode, LemonAIdeError } from "@lemonaide/shared";
 import type { Env } from "../env";
+import { getSupabaseServiceClient } from "../db/supabase";
 
 interface ProviderEnv {
   OAUTH_PROVIDER?: {
@@ -17,22 +17,30 @@ interface ProviderEnv {
   };
 }
 
-export async function deleteAccount(env: Env, db: SupabaseClient, userId: string): Promise<void> {
-  const { data: projects } = await db.from("projects").select("id").eq("owner_id", userId);
+// Row wipes run on the service-role client: RLS forbids users deleting their own
+// profile/audit rows, and ownership was already enforced by the router.
+export async function deleteAccount(env: Env, userId: string): Promise<void> {
+  const admin = getSupabaseServiceClient(env);
+  const { data: projects } = await admin.from("projects").select("id").eq("owner_id", userId);
   const projectIds = (projects ?? []).map((p) => p.id);
 
   if (projectIds.length > 0) {
     for (const table of ["deployments", "builds", "project_versions", "project_files"]) {
-      const { error } = await db.from(table).delete().in("project_id", projectIds);
+      const { error } = await admin.from(table).delete().in("project_id", projectIds);
       if (error) throw new LemonAIdeError(ErrorCode.INTERNAL, `failed to delete ${table}`, { cause: error });
     }
-    const { error } = await db.from("projects").delete().in("id", projectIds);
+    const { error } = await admin.from("projects").delete().in("id", projectIds);
     if (error) throw new LemonAIdeError(ErrorCode.INTERNAL, "failed to delete projects", { cause: error });
   }
 
-  for (const table of ["mcp_authorizations", "usage_records", "audit_logs", "profiles"]) {
-    const { error } = await db.from(table).delete().eq("user_id", userId);
+  // profiles is keyed by id (= the auth uid), everything else by user_id.
+  for (const table of ["mcp_authorizations", "usage_records", "audit_logs"]) {
+    const { error } = await admin.from(table).delete().eq("user_id", userId);
     if (error) throw new LemonAIdeError(ErrorCode.INTERNAL, `failed to delete ${table}`, { cause: error });
+  }
+  {
+    const { error } = await admin.from("profiles").delete().eq("id", userId);
+    if (error) throw new LemonAIdeError(ErrorCode.INTERNAL, "failed to delete profiles", { cause: error });
   }
 
   try {

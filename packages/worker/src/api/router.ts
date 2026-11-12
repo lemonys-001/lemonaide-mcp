@@ -244,8 +244,7 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
 
   app.delete("/me", async (c) => {
     const user = c.get("user");
-    const db = getSupabaseServiceClient(env);
-    await deleteAccount(env, db, user.userId);
+    await deleteAccount(env, user.userId);
     return jsonOk({ deleted: true }, newCorrelationId());
   });
 
