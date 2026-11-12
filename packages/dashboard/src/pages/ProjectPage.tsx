@@ -682,7 +682,14 @@ function SettingsTab({ project, onChanged, onError }: { project: Project; onChan
             )}
           </div>
         ) : github.mode === "none" ? (
-          <p className="muted small">GitHub sync isn't set up on the platform yet.</p>
+          <div className="stack">
+            <p className="muted small">
+              One-time owner setup: registers the LemonAIde GitHub App and installs it on your account.
+            </p>
+            <div>
+              <Button onClick={connectGithub}>Set up GitHub sync…</Button>
+            </div>
+          </div>
         ) : (
           <div className="stack">
             <p className="muted small">Connect your GitHub account to create repositories and sync project files.</p>
