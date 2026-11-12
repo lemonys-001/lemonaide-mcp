@@ -108,32 +108,21 @@ export function hasGithubApp(env: Env): boolean {
   return Boolean(env.GITHUB_APP_ID && env.GITHUB_APP_PRIVATE_KEY);
 }
 
-export function hasGithubToken(env: Env): boolean {
-  return Boolean(env.BUILD_DISPATCH_TOKEN);
-}
-
 /**
- * Token for repo-scoped API calls. Prefers the GitHub App installation when
- * configured; falls back to BUILD_DISPATCH_TOKEN (a PAT / OAuth token) so the
- * platform works without a GitHub App. Only the "app" mode needs an
- * installation row — token mode is a single-account setup.
+ * Token for repo-scoped API calls: always the caller's own GitHub App
+ * installation. The platform BUILD_DISPATCH_TOKEN is NOT a repo credential —
+ * it only dispatches builds — so repos can never land under the operator's
+ * account. Per-user GitHub auth (public/private choice) comes later.
  */
-async function repoApiToken(env: Env, installation?: { installation_id: number } | null): Promise<string> {
-  if (hasGithubApp(env)) {
-    if (!installation) {
-      throw new LemonAIdeError(ErrorCode.NOT_CONFIGURED, "connect your GitHub account first");
-    }
-    const appJwt = await requireAppAuth(env);
-    return createInstallationToken(appJwt, installation.installation_id);
+async function repoApiToken(env: Env, installation: { installation_id: number } | null | undefined): Promise<string> {
+  if (!hasGithubApp(env)) {
+    throw new LemonAIdeError(ErrorCode.NOT_CONFIGURED, "GitHub sync is disabled (GitHub App not configured)");
   }
-  if (env.BUILD_DISPATCH_TOKEN) return env.BUILD_DISPATCH_TOKEN;
-  throw new LemonAIdeError(ErrorCode.NOT_CONFIGURED, "GitHub credentials are not configured (GitHub App or BUILD_DISPATCH_TOKEN)");
-}
-
-export async function tokenAccountLogin(env: Env): Promise<string> {
-  if (!env.BUILD_DISPATCH_TOKEN) throw new LemonAIdeError(ErrorCode.NOT_CONFIGURED, "BUILD_DISPATCH_TOKEN is not configured");
-  const me = (await githubFetch("/user", { token: env.BUILD_DISPATCH_TOKEN })) as { login?: string };
-  return me.login ?? "github";
+  if (!installation) {
+    throw new LemonAIdeError(ErrorCode.NOT_CONFIGURED, "connect your GitHub account first");
+  }
+  const appJwt = await requireAppAuth(env);
+  return createInstallationToken(appJwt, installation.installation_id);
 }
 
 async function getInstallation(env: Env, installationId: number): Promise<InstallationInfo> {
@@ -165,23 +154,6 @@ export async function connectInstallation(
   return row;
 }
 
-export async function listInstallationRepos(env: Env, installationId?: number): Promise<{ id: number; name: string; full_name: string; private: boolean }[]> {
-  if (installationId && hasGithubApp(env)) {
-    const appJwt = await requireAppAuth(env);
-    const token = await createInstallationToken(appJwt, installationId);
-    const data = (await githubFetch(`/installation/repositories?per_page=100`, { token })) as {
-      repositories: { id: number; name: string; full_name: string; private: boolean }[];
-    };
-    return data.repositories;
-  }
-  if (!hasGithubApp(env) && env.BUILD_DISPATCH_TOKEN) {
-    return (await githubFetch(`/user/repos?per_page=100&sort=pushed`, { token: env.BUILD_DISPATCH_TOKEN })) as {
-      id: number; name: string; full_name: string; private: boolean;
-    }[];
-  }
-  throw new LemonAIdeError(ErrorCode.NOT_CONFIGURED, "GitHub credentials are not configured");
-}
-
 /* ------------------------------------------------------------------ */
 /* Per-project repository                                              */
 /* ------------------------------------------------------------------ */
@@ -194,8 +166,8 @@ export async function createRepoForProject(
   opts: { privateRepo?: boolean } = {},
 ): Promise<{ repo: repos.GithubRepository; repoFullName: string; repoUrl: string }> {
   const installation = await repos.getGithubInstallation(db, actor.userId);
-  if (!installation && !hasGithubApp(env) && !hasGithubToken(env)) {
-    throw new LemonAIdeError(ErrorCode.NOT_CONFIGURED, "GitHub credentials are not configured");
+  if (!installation) {
+    throw new LemonAIdeError(ErrorCode.NOT_CONFIGURED, "connect your GitHub account first");
   }
 
   const existing = await repos.getGithubRepository(db, project.id);
@@ -205,10 +177,9 @@ export async function createRepoForProject(
 
   const token = await repoApiToken(env, installation);
 
-  // App mode: repo lives on the installation's account (user or org).
-  // Token mode: repo is created under the token owner's account.
-  const isOrg = installation ? installation.account_type?.toLowerCase() === "organization" : false;
-  const owner = installation ? installation.account_login : await tokenAccountLogin(env);
+  // Repo lives on the installation's account (user or org) — never the platform's.
+  const isOrg = installation.account_type?.toLowerCase() === "organization";
+  const owner = installation.account_login;
   const name = project.slug;
   const body = {
     name,

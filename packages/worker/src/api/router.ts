@@ -48,7 +48,6 @@ import {
   readConnectState,
   signConnectState,
   syncProjectToGitHub,
-  tokenAccountLogin,
 } from "../services/github";
 import { deleteSourceFile, getSourceFile, listSourceFiles, putSourceFile } from "../storage/source";
 
@@ -451,17 +450,6 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
         { mode: "app", connected: true, account: installation.account_login, connectUrl: null },
         newCorrelationId(),
       );
-    }
-
-    // Token mode: no GitHub App — the platform-wide token is the credential.
-    if (!appMode && env.BUILD_DISPATCH_TOKEN) {
-      let account = "github";
-      try {
-        account = await tokenAccountLogin(env);
-      } catch {
-        // profile fetch is best-effort; the badge only needs a label
-      }
-      return jsonOk({ mode: "token", connected: true, account, connectUrl: null }, newCorrelationId());
     }
 
     let url: string | null = null;

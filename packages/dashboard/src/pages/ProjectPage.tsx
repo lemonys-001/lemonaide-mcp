@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   api,
-  ApiError,
   type Build,
   type Deployment,
   type Project,
@@ -551,21 +550,8 @@ function SettingsTab({ project, onChanged, onError }: { project: Project; onChan
   const [description, setDescription] = useState(project.description ?? "");
   const [slug, setSlug] = useState(project.slug);
   const [renameSlug, setRenameSlug] = useState(false);
-  const [github, setGithub] = useState<{ connected: boolean; account: string | null } | null>(null);
-  const [repoInfo, setRepoInfo] = useState<{ hasRepo: boolean; repoUrl?: string | null } | null>(null);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
-
-  useEffect(() => {
-    void (async () => {
-      try {
-        const status = await api.githubStatus();
-        setGithub({ connected: status.connected, account: status.account });
-      } catch {
-        setGithub({ connected: false, account: null });
-      }
-    })();
-  }, []);
 
   async function save() {
     setBusy(true);
@@ -579,43 +565,6 @@ function SettingsTab({ project, onChanged, onError }: { project: Project; onChan
       setSaved(true);
       setRenameSlug(false);
       onChanged();
-    } catch (err) {
-      onError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function connectGithub() {
-    try {
-      const { url } = await api.githubConnectUrl();
-      window.location.href = url;
-    } catch (err) {
-      const msg = err instanceof ApiError && err.code === "NOT_CONFIGURED" ? "GitHub App is not configured yet." : err instanceof Error ? err.message : String(err);
-      onError(msg);
-    }
-  }
-
-  async function createRepo() {
-    setBusy(true);
-    try {
-      const res = await api.githubCreateRepo(project.slug, true);
-      setRepoInfo({ hasRepo: true, repoUrl: res.url });
-      onChanged();
-    } catch (err) {
-      onError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function sync() {
-    setBusy(true);
-    try {
-      const res = await api.githubSync(project.slug);
-      setSaved(false);
-      onError(""); // clear
-      window.alert(`Synced ${res.fileCount} file(s) → commit ${res.commitSha.slice(0, 7)}`);
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -651,44 +600,6 @@ function SettingsTab({ project, onChanged, onError }: { project: Project; onChan
             {busy ? "Saving…" : "Save changes"}
           </Button>
         </div>
-      </div>
-
-      <div className="card">
-        <div className="panel-head">
-          <strong>GitHub</strong>
-          {github && <Badge tone={github.connected ? "ok" : "muted"}>{github.connected ? `connected · ${github.account}` : "not connected"}</Badge>}
-        </div>
-        {github === null ? (
-          <Spinner />
-        ) : github.connected ? (
-          <div className="stack">
-            <p className="muted small">
-              Push this project to a GitHub repository; builds still run on the platform's isolated runner.
-            </p>
-            <div className="row gap">
-              <Button onClick={createRepo} disabled={busy}>
-                Create repo from project
-              </Button>
-              <Button variant="ghost" onClick={sync} disabled={busy}>
-                Sync files → GitHub
-              </Button>
-            </div>
-            {repoInfo?.repoUrl && (
-              <p className="small">
-                <a className="link" href={repoInfo.repoUrl} target="_blank" rel="noreferrer">
-                  {repoInfo.repoUrl} ↗
-                </a>
-              </p>
-            )}
-          </div>
-        ) : (
-          <div className="stack">
-            <p className="muted small">Connect your GitHub account to create repositories and sync project files.</p>
-            <div>
-              <Button onClick={connectGithub}>Connect GitHub…</Button>
-            </div>
-          </div>
-        )}
       </div>
 
       <div className="card">
