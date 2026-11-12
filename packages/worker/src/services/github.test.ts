@@ -63,11 +63,12 @@ describe("connect state HMAC", () => {
 });
 
 describe("connectUrl", () => {
-  it("points at the GitHub App installation page", () => {
-    expect(connectUrl(fakeEnv())).toBe("https://github.com/apps/lemonaide-test/installations/new");
+  it("points at the GitHub App installation page when app config is present", async () => {
+    const env = fakeEnv({ GITHUB_APP_ID: "1", GITHUB_APP_PRIVATE_KEY: "pem" } as Partial<Env>);
+    expect(await connectUrl(env)).toBe("https://github.com/apps/lemonaide-test/installations/new");
   });
 
-  it("throws NOT_CONFIGURED without an app slug", () => {
-    expect(() => connectUrl(fakeEnv({ GITHUB_APP_SLUG: "" } as Partial<Env>))).toThrow(/not configured/i);
+  it("throws NOT_CONFIGURED without app config", async () => {
+    await expect(connectUrl(fakeEnv())).rejects.toThrow(/not configured/i);
   });
 });
