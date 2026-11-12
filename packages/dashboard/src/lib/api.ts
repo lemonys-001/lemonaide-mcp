@@ -97,6 +97,13 @@ export interface Deployment {
   errorMessage?: string | null;
 }
 
+export interface GithubStatus {
+  mode: "app" | "none";
+  connected: boolean;
+  account: string | null;
+  connectUrl: string | null;
+}
+
 export interface Me {
   userId: string;
   username: string;
@@ -168,6 +175,13 @@ export const api = {
   rollback: (ref: string, deploymentId: string) =>
     request<Deployment>("POST", `/api/projects/${encodeURIComponent(ref)}/deployments/${deploymentId}/rollback`),
   unpublish: (ref: string) => request<{ unpublished: boolean }>("DELETE", `/api/projects/${encodeURIComponent(ref)}/deployments`),
+
+  githubStatus: () => request<GithubStatus>("GET", "/api/github/status"),
+  githubConnectUrl: () => request<{ url: string }>("GET", "/api/github/connect-url"),
+  githubCreateRepo: (ref: string, isPrivate: boolean) =>
+    request<{ fullName: string; url: string }>("POST", `/api/projects/${encodeURIComponent(ref)}/github/repo`, { private: isPrivate }),
+  githubSync: (ref: string) =>
+    request<{ commitSha: string; fileCount: number; repoFullName: string }>("POST", `/api/projects/${encodeURIComponent(ref)}/github/sync`),
 
   listConnections: () => request<McpConnection[]>("GET", "/api/authorizations"),
   revokeConnection: (grantId: string) => request<{ revoked: boolean }>("DELETE", `/api/authorizations/${encodeURIComponent(grantId)}`),

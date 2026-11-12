@@ -49,12 +49,12 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           SESSION_SECRET: ${{ secrets.SESSION_SECRET }}
           BUILD_RUNNER_TOKEN: ${{ secrets.BUILD_RUNNER_TOKEN }}
-          GITHUB_APP_ID: ${{ secrets.GITHUB_APP_ID }}
-          GITHUB_APP_CLIENT_ID: ${{ secrets.GITHUB_APP_CLIENT_ID }}
-          GITHUB_APP_CLIENT_SECRET: ${{ secrets.GITHUB_APP_CLIENT_SECRET }}
-          GITHUB_APP_PRIVATE_KEY: ${{ secrets.GITHUB_APP_PRIVATE_KEY }}
-          GITHUB_APP_SLUG: ${{ secrets.GITHUB_APP_SLUG }}
-          GITHUB_APP_WEBHOOK_SECRET: ${{ secrets.GITHUB_APP_WEBHOOK_SECRET }}
+          GITHUB_APP_ID: ${{ secrets.CF_GITHUB_APP_ID }}
+          GITHUB_APP_CLIENT_ID: ${{ secrets.CF_GITHUB_APP_CLIENT_ID }}
+          GITHUB_APP_CLIENT_SECRET: ${{ secrets.CF_GITHUB_APP_CLIENT_SECRET }}
+          GITHUB_APP_PRIVATE_KEY: ${{ secrets.CF_GITHUB_APP_PRIVATE_KEY }}
+          GITHUB_APP_SLUG: ${{ secrets.CF_GITHUB_APP_SLUG }}
+          GITHUB_APP_WEBHOOK_SECRET: ${{ secrets.CF_GITHUB_APP_WEBHOOK_SECRET }}
           BUILD_DISPATCH_TOKEN: ${{ secrets.BUILD_DISPATCH_TOKEN }}
         run: bash scripts/sync-secrets.sh
       - name: Deploy worker (production)

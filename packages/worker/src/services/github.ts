@@ -85,10 +85,66 @@ export async function verifyConnectState(env: Env, state: string, userId: string
 /* Installations                                                       */
 /* ------------------------------------------------------------------ */
 
-export function connectUrl(env: Env): string {
-  const slug = env.GITHUB_APP_SLUG;
+/**
+ * GitHub App credentials. Normally env secrets; the manifest flow lets the
+ * owner register the app in one click, which stores the generated credentials
+ * in KV instead (no redeploy needed). Env secrets win when present.
+ */
+export interface GithubAppConfig {
+  appId: string;
+  slug: string;
+  clientId: string;
+  clientSecret: string;
+  privateKeyPem: string;
+  webhookSecret: string;
+}
+
+const APP_CONFIG_KEY = "ghapp:app-config";
+let appConfigCache: { cfg: GithubAppConfig | null; at: number } | null = null;
+
+export async function getGithubAppConfig(env: Env): Promise<GithubAppConfig | null> {
+  if (env.GITHUB_APP_ID && env.GITHUB_APP_PRIVATE_KEY) {
+    return {
+      appId: env.GITHUB_APP_ID,
+      slug: env.GITHUB_APP_SLUG ?? "",
+      clientId: env.GITHUB_APP_CLIENT_ID ?? "",
+      clientSecret: env.GITHUB_APP_CLIENT_SECRET ?? "",
+      privateKeyPem: env.GITHUB_APP_PRIVATE_KEY,
+      webhookSecret: env.GITHUB_APP_WEBHOOK_SECRET ?? "",
+    };
+  }
+  if (appConfigCache && Date.now() - appConfigCache.at < 60_000) return appConfigCache.cfg;
+  let cfg: GithubAppConfig | null = null;
+  try {
+    const raw = await env.OAUTH_KV.get(APP_CONFIG_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as GithubAppConfig;
+      if (parsed.appId && parsed.privateKeyPem) cfg = parsed;
+    }
+  } catch {
+    // unreadable/absent config = not configured
+  }
+  appConfigCache = { cfg, at: Date.now() };
+  return cfg;
+}
+
+export async function saveGithubAppConfig(env: Env, cfg: GithubAppConfig): Promise<void> {
+  await env.OAUTH_KV.put(APP_CONFIG_KEY, JSON.stringify(cfg));
+  appConfigCache = { cfg, at: Date.now() };
+}
+
+export function connectUrlFor(slug: string): string {
   if (!slug) throw new LemonAIdeError(ErrorCode.NOT_CONFIGURED, "GitHub App is not configured");
   return `https://github.com/apps/${slug}/installations/new`;
+}
+
+export async function connectUrl(env: Env): Promise<string> {
+  const cfg = await getGithubAppConfig(env);
+  return connectUrlFor(cfg?.slug ?? "");
+}
+
+export async function hasGithubApp(env: Env): Promise<boolean> {
+  return (await getGithubAppConfig(env)) !== null;
 }
 
 interface InstallationInfo {
@@ -98,24 +154,21 @@ interface InstallationInfo {
 }
 
 async function requireAppAuth(env: Env): Promise<string> {
-  if (!env.GITHUB_APP_ID || !env.GITHUB_APP_PRIVATE_KEY) {
+  const cfg = await getGithubAppConfig(env);
+  if (!cfg) {
     throw new LemonAIdeError(ErrorCode.NOT_CONFIGURED, "GitHub App credentials are not configured");
   }
-  return createAppJwt(env.GITHUB_APP_ID, env.GITHUB_APP_PRIVATE_KEY);
-}
-
-export function hasGithubApp(env: Env): boolean {
-  return Boolean(env.GITHUB_APP_ID && env.GITHUB_APP_PRIVATE_KEY);
+  return createAppJwt(cfg.appId, cfg.privateKeyPem);
 }
 
 /**
  * Token for repo-scoped API calls: always the caller's own GitHub App
  * installation. The platform BUILD_DISPATCH_TOKEN is NOT a repo credential —
  * it only dispatches builds — so repos can never land under the operator's
- * account. Per-user GitHub auth (public/private choice) comes later.
+ * account.
  */
 async function repoApiToken(env: Env, installation: { installation_id: number } | null | undefined): Promise<string> {
-  if (!hasGithubApp(env)) {
+  if (!(await hasGithubApp(env))) {
     throw new LemonAIdeError(ErrorCode.NOT_CONFIGURED, "GitHub sync is disabled (GitHub App not configured)");
   }
   if (!installation) {
@@ -123,6 +176,56 @@ async function repoApiToken(env: Env, installation: { installation_id: number } 
   }
   const appJwt = await requireAppAuth(env);
   return createInstallationToken(appJwt, installation.installation_id);
+}
+
+/* ------------------------------------------------------------------ */
+/* App manifest flow (one-click app registration by the platform owner) */
+/* ------------------------------------------------------------------ */
+
+function primaryBase(env: Env): string {
+  return env.APP_BASE_DOMAIN.startsWith("http") ? env.APP_BASE_DOMAIN : `https://${env.APP_BASE_DOMAIN}`;
+}
+
+export function buildAppManifest(env: Env, setupState: string): Record<string, unknown> {
+  const base = primaryBase(env);
+  return {
+    name: "LemonAIde",
+    url: `https://${base}`,
+    hook_attributes: { url: `https://${base}/api/github/webhook`, active: true },
+    redirect_url: `https://${base}/api/github/manifest-setup`,
+    callback_urls: [`https://${base}/api/github/callback`],
+    setup_url: `https://${base}/api/github/callback?state=${encodeURIComponent(setupState)}`,
+    setup_on_update: true,
+    description: "Publish LemonAIde projects to your own GitHub repositories",
+    public: false,
+    default_permissions: { contents: "write", metadata: "read" },
+    default_events: ["installation"],
+    request_oauth_on_install: false,
+  };
+}
+
+export interface ManifestConversion {
+  id: number;
+  slug: string;
+  html_url: string;
+  pem: string;
+  webhook_secret: string;
+  client_id: string;
+  client_secret: string;
+}
+
+export async function exchangeManifestCode(code: string): Promise<ManifestConversion> {
+  const res = await fetch(`https://api.github.com/app-manifests/${encodeURIComponent(code)}/conversions`, {
+    method: "POST",
+    headers: {
+      "user-agent": "lemonaide-mcp-worker",
+      accept: "application/vnd.github+json",
+    },
+  });
+  if (!res.ok) {
+    throw new LemonAIdeError(ErrorCode.INTERNAL, `GitHub manifest conversion failed (${res.status})`);
+  }
+  return (await res.json()) as ManifestConversion;
 }
 
 async function getInstallation(env: Env, installationId: number): Promise<InstallationInfo> {
@@ -242,7 +345,7 @@ export async function syncProjectToGitHub(
   const repoRow = await repos.getGithubRepository(db, project.id);
   if (!repoRow) throw new LemonAIdeError(ErrorCode.NOT_FOUND, "project is not connected to a GitHub repository");
   const installation = await repos.getGithubInstallation(db, actor.userId);
-  if (!installation && hasGithubApp(env)) {
+  if (!installation && (await hasGithubApp(env))) {
     throw new LemonAIdeError(ErrorCode.NOT_CONFIGURED, "GitHub installation no longer available");
   }
 

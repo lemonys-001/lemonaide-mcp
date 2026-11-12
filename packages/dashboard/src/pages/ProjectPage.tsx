@@ -552,6 +552,19 @@ function SettingsTab({ project, onChanged, onError }: { project: Project; onChan
   const [renameSlug, setRenameSlug] = useState(false);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [github, setGithub] = useState<{ mode: string; connected: boolean; account: string | null; connectUrl: string | null } | null>(null);
+  const [repoUrl, setRepoUrl] = useState<string | null>(null);
+  const [privateRepo, setPrivateRepo] = useState(true);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        setGithub(await api.githubStatus());
+      } catch {
+        setGithub({ mode: "none", connected: false, account: null, connectUrl: null });
+      }
+    })();
+  }, []);
 
   async function save() {
     setBusy(true);
@@ -565,6 +578,35 @@ function SettingsTab({ project, onChanged, onError }: { project: Project; onChan
       setSaved(true);
       setRenameSlug(false);
       onChanged();
+    } catch (err) {
+      onError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function connectGithub() {
+    if (!github?.connectUrl) return;
+    window.location.href = github.connectUrl;
+  }
+
+  async function createRepo() {
+    setBusy(true);
+    try {
+      const res = await api.githubCreateRepo(project.slug, privateRepo);
+      setRepoUrl(res.url);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sync() {
+    setBusy(true);
+    try {
+      const res = await api.githubSync(project.slug);
+      window.alert(`Synced ${res.fileCount} file(s) → commit ${res.commitSha.slice(0, 7)} on ${res.repoFullName}`);
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -600,6 +642,55 @@ function SettingsTab({ project, onChanged, onError }: { project: Project; onChan
             {busy ? "Saving…" : "Save changes"}
           </Button>
         </div>
+      </div>
+
+      <div className="card">
+        <div className="panel-head">
+          <strong>GitHub</strong>
+          {github && <Badge tone={github.connected ? "ok" : "muted"}>{github.connected ? `connected · ${github.account}` : "not connected"}</Badge>}
+        </div>
+        {github === null ? (
+          <Spinner />
+        ) : github.connected ? (
+          <div className="stack">
+            <p className="muted small">
+              Sync this project to your own GitHub account. Builds still run on the platform's isolated runner.
+            </p>
+            <label className="muted small" style={{ display: "flex", gap: 8, alignItems: "center", cursor: "pointer" }}>
+              <input
+                type="checkbox"
+                checked={privateRepo}
+                onChange={(e) => setPrivateRepo(e.target.checked)}
+                disabled={busy}
+              />
+              Private repository (uncheck for public)
+            </label>
+            <div className="row gap">
+              <Button onClick={createRepo} disabled={busy}>
+                Create repo from project
+              </Button>
+              <Button variant="ghost" onClick={sync} disabled={busy}>
+                Sync files → GitHub
+              </Button>
+            </div>
+            {repoUrl && (
+              <p className="small">
+                <a className="link" href={repoUrl} target="_blank" rel="noreferrer">
+                  {repoUrl} ↗
+                </a>
+              </p>
+            )}
+          </div>
+        ) : github.mode === "none" ? (
+          <p className="muted small">GitHub sync isn't set up on the platform yet.</p>
+        ) : (
+          <div className="stack">
+            <p className="muted small">Connect your GitHub account to create repositories and sync project files.</p>
+            <div>
+              <Button onClick={connectGithub}>Connect GitHub…</Button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="card">

@@ -40,12 +40,16 @@ import {
 import { deployProject, describeDeployment, liveUrlForDeployment, rollbackDeployment, unpublishProject } from "../services/deploys";
 import { deleteAccount } from "../services/accounts";
 import {
+  buildAppManifest,
   connectInstallation,
   connectUrl,
   createRepoForProject,
   disconnectRepo,
+  exchangeManifestCode,
+  getGithubAppConfig,
   hasGithubApp,
   readConnectState,
+  saveGithubAppConfig,
   signConnectState,
   syncProjectToGitHub,
 } from "../services/github";
@@ -175,6 +179,7 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
     //  - GitHub webhook: X-Hub-Signature-256 HMAC over the raw body
     if (
       (c.req.method === "GET" && c.req.path === "/api/github/callback") ||
+      (c.req.method === "GET" && c.req.path === "/api/github/manifest-setup") ||
       (c.req.method === "POST" && c.req.path === "/api/github/webhook") ||
       (c.req.method === "POST" && c.req.path === "/api/auth/session-bootstrap")
     ) {
@@ -443,7 +448,6 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
     const user = c.get("user");
     const db = getSupabaseServiceClient(env);
     const installation = await repos.getGithubInstallation(db, user.userId);
-    const appMode = hasGithubApp(env);
 
     if (installation) {
       return jsonOk(
@@ -452,11 +456,18 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
       );
     }
 
+    const appMode = await hasGithubApp(env);
     let url: string | null = null;
-    try {
-      url = appMode ? connectUrl(env) : null;
-    } catch {
-      url = null;
+    if (appMode) {
+      try {
+        url = await connectUrl(env);
+      } catch {
+        url = null;
+      }
+    } else {
+      // App not registered yet: the owner sets it up in one click via the
+      // manifest flow (this endpoint serves the auto-submitting form page).
+      url = `${primaryBase(env)}/api/github/app-manifest`;
     }
     return jsonOk(
       { mode: appMode ? "app" : "none", connected: false, account: null, connectUrl: url },
@@ -464,19 +475,71 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
     );
   });
 
-  app.get("/github/connect-url", async (c) => {
+  // One-time owner setup: serves a page that POSTs the app manifest to GitHub.
+  // GitHub then redirects back to /github/manifest-setup with a code we trade
+  // for the app's credentials (stored in KV — no redeploy needed).
+  app.get("/github/app-manifest", async (c) => {
     const user = c.get("user");
-    if (isProduction(env) && !env.GITHUB_APP_SLUG) {
-      return jsonErr(ErrorCode.NOT_CONFIGURED, "GitHub App is not configured", newCorrelationId(), 500);
+    if (await hasGithubApp(env)) {
+      return c.redirect(`${primaryBase(env)}/#/settings`, 302);
     }
-    const state = await signConnectState(env, user.userId);
-    const base = connectUrl(env);
-    const url = `${base}?setup_action=install&state=${encodeURIComponent(state)}`;
-    return jsonOk({ url }, newCorrelationId());
+    const setupState = await signConnectState(env, user.userId, 60 * 60_000);
+    const manifest = JSON.stringify(buildAppManifest(env, setupState));
+    const action = `https://github.com/settings/apps/new?state=${encodeURIComponent(setupState)}`;
+    return c.html(
+      `<!doctype html><html><body style="font-family:system-ui;background:#0f120b;color:#edebdd;display:grid;place-items:center;min-height:100vh">` +
+        `<p>Redirecting to GitHub to register the LemonAIde app…</p>` +
+        `<form id="f" action="${action}" method="post"><input type="hidden" name="manifest" value='${manifest.replace(/'/g, "&#39;")}'></form>` +
+        `<script>document.getElementById("f").submit()</script>` +
+        `</body></html>`,
+    );
   });
 
+  app.get("/github/manifest-setup", async (c) => {
+    const code = c.req.query("code") ?? "";
+    const state = c.req.query("state") ?? "";
+    const userId = await readConnectState(env, state);
+    if (!code || !userId) {
+      return c.html(
+        `<!doctype html><html><body style="font-family:system-ui;background:#0f120b;color:#e07a5f;display:grid;place-items:center;min-height:100vh">` +
+          `<p>Invalid setup link — start again from the dashboard settings page.</p></body></html>`,
+      );
+    }
+    try {
+      const conv = await exchangeManifestCode(code);
+      await saveGithubAppConfig(env, {
+        appId: String(conv.id),
+        slug: conv.slug,
+        clientId: conv.client_id,
+        clientSecret: conv.client_secret,
+        privateKeyPem: conv.pem,
+        webhookSecret: conv.webhook_secret,
+      });
+      const db = getSupabaseServiceClient(env);
+      await recordAudit(db, {
+        userId,
+        actorType: "dashboard",
+        action: "github.app_created",
+        targetType: "github_app",
+        targetId: String(conv.id),
+        meta: { slug: conv.slug },
+      });
+      // Send the owner straight to install the app on their account.
+      return c.redirect(`https://github.com/apps/${encodeURIComponent(conv.slug)}/installations/new`, 302);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "unknown error";
+      return c.html(
+        `<!doctype html><html><body style="font-family:system-ui;background:#0f120b;color:#e07a5f;display:grid;place-items:center;min-height:100vh">` +
+          `<p>GitHub app setup failed: ${msg}</p><p><a href="${primaryBase(env)}/#/settings" style="color:#e9c842">Back to settings</a></p></body></html>`,
+      );
+    }
+  });
+
+
+
   app.post("/github/webhook", async (c) => {
-    const secret = env.GITHUB_APP_WEBHOOK_SECRET;
+    const appCfg = await getGithubAppConfig(env);
+    const secret = appCfg?.webhookSecret;
     if (!secret) {
       return jsonErr(ErrorCode.NOT_CONFIGURED, "webhook secret not configured", newCorrelationId(), 500);
     }
@@ -522,6 +585,18 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
     await connectInstallation(env, db, { userId: profile.id, username: profile.username, via: "dashboard" }, installationId);
     const redirectTo = String(c.req.query("redirect_to") ?? `${primaryBase(env)}/#/settings`);
     return c.redirect(redirectTo, 302);
+  });
+
+  app.get("/projects/:ref/github", async (c) => {
+    const user = c.get("user");
+    const { db, project } = await requireProjectFor(env, user, c.req.param("ref"));
+    const repo = await repos.getGithubRepository(db, project.id);
+    return jsonOk(
+      repo
+        ? { repo: { fullName: repo.repo_full_name, url: repo.repo_url, defaultBranch: repo.default_branch, lastCommitSha: repo.last_commit_sha, lastSyncedAt: repo.last_synced_at } }
+        : { repo: null },
+      newCorrelationId(),
+    );
   });
 
   app.post("/projects/:ref/github/repo", async (c) => {
