@@ -82,7 +82,7 @@ export function App() {
   if (section === "projects" && param) {
     page = <ProjectPage projectRef={param} onBack={() => navigate(["projects"])} />;
   } else if (section === "settings") {
-    page = <SettingsPage me={me} />;
+    page = <SettingsPage me={me} onDeleted={() => { setMe(null); setAuth("signedOut"); navigate([""]); }} />;
   } else if (section === "docs") {
     page = <DocsPage onBack={() => navigate([""])} />;
   } else if (section === "login" || section === "signup") {
@@ -97,7 +97,7 @@ export function App() {
     <div className="app">
       <header className="topbar">
         <a className="brand" href="#/">
-          LemonAIde
+          Lem<em>on</em>AIde
         </a>
         <nav className="topnav">
           <a href="#/" className={`toplink${section !== "settings" && section !== "docs" ? " active" : ""}`}>

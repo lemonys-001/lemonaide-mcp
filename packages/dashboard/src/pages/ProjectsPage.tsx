@@ -123,7 +123,9 @@ export function ProjectsPage({ onOpen }: { onOpen: (slug: string) => void }) {
                     <strong>{p.name}</strong>
                     <Badge tone={buildTone(p.status)}>{p.status}</Badge>
                   </div>
-                  <code className="muted">/{p.slug}</code>
+                  <code className="route-plate">
+                    /me/<strong>{p.slug}</strong>
+                  </code>
                 </button>
                 <div className="row gap muted small project-meta">
                   <span>{p.framework}</span>

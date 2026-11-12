@@ -8,6 +8,7 @@
 
 import { Hono } from "hono";
 import type { MiddlewareHandler } from "hono";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { ErrorCode, LemonAIdeError, httpStatusForErrorCode } from "@lemonaide/shared";
 import type { Env } from "../env";
 import { isProduction } from "../env";
@@ -37,6 +38,7 @@ import {
   verifyRunnerToken,
 } from "../services/builds";
 import { deployProject, describeDeployment, liveUrlForDeployment, rollbackDeployment, unpublishProject } from "../services/deploys";
+import { deleteAccount } from "../services/accounts";
 import {
   connectInstallation,
   connectUrl,
@@ -64,9 +66,19 @@ function actorOf(user: ApiUser): Actor {
 
 async function requireProjectFor(env: Env, user: ApiUser, ref: string) {
   const db = getSupabaseServiceClient(env);
-  const project = (await repos.getProject(db, user.userId, ref)) ?? (await repos.getProjectBySlug(db, user.userId, ref));
+  const project = await resolveOwnedProject(db, user.userId, ref);
   if (!project) throw new LemonAIdeError(ErrorCode.NOT_FOUND, `no project "${ref}"`);
   return { db, project };
+}
+
+// PostgREST 22P02s when a non-uuid hits the id column, so only try id when
+// the ref is uuid-shaped (same guard as the MCP layer).
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+async function resolveOwnedProject(db: SupabaseClient, userId: string, ref: string) {
+  if (UUID_RE.test(ref)) {
+    return (await repos.getProject(db, userId, ref)) ?? (await repos.getProjectBySlug(db, userId, ref));
+  }
+  return repos.getProjectBySlug(db, userId, ref);
 }
 
 export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
@@ -228,6 +240,13 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
       },
       newCorrelationId(),
     );
+  });
+
+  app.delete("/me", async (c) => {
+    const user = c.get("user");
+    const db = getSupabaseServiceClient(env);
+    await deleteAccount(env, db, user.userId);
+    return jsonOk({ deleted: true }, newCorrelationId());
   });
 
   /* Projects */

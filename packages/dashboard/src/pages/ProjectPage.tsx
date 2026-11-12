@@ -72,9 +72,10 @@ export function ProjectPage({ projectRef, onBack }: { projectRef: string; onBack
           <h1>
             {project.name} <Badge tone={buildTone(project.status)}>{project.status}</Badge>
           </h1>
-          <p className="muted row gap">
-            <code>/{project.slug}</code>
-            <span>·</span>
+          <p className="muted row gap" style={{ flexWrap: "wrap" }}>
+            <span className="route-plate">
+              /me/<strong>{project.slug}</strong>
+            </span>
             <span>{project.framework}</span>
             {project.liveUrl && (
               <>

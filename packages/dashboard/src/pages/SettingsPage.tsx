@@ -3,9 +3,10 @@ import { api, type McpConnection, type Me } from "../lib/api";
 import { supabase } from "../lib/supabase";
 import { Badge, Button, EmptyState, ErrorBanner, Spinner, timeAgo } from "../components/ui";
 
-export function SettingsPage({ me }: { me: Me | null }) {
+export function SettingsPage({ me, onDeleted }: { me: Me | null; onDeleted: () => void }) {
   const [connections, setConnections] = useState<McpConnection[] | null>(null);
   const [error, setError] = useState("");
+  const [deleting, setDeleting] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -27,6 +28,25 @@ export function SettingsPage({ me }: { me: Me | null }) {
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function deleteAccount() {
+    if (!me) return;
+    const answer = window.prompt(
+      `This permanently deletes your account, all projects, deployments and MCP connections. Type your username "${me.username}" to confirm:`,
+    );
+    if (answer !== me.username) return;
+    setDeleting(true);
+    setError("");
+    try {
+      await api.deleteAccount();
+      await supabase().auth.signOut();
+      try { localStorage.clear(); } catch { /* private mode */ }
+      onDeleted();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setDeleting(false);
     }
   }
 
@@ -119,6 +139,18 @@ export function SettingsPage({ me }: { me: Me | null }) {
               ))}
             </ul>
           )}
+        </div>
+
+        <div className="card danger-zone">
+          <div className="panel-head">
+            <strong>Delete account</strong>
+          </div>
+          <p className="muted small">
+            Permanently removes your account, every project, deployment, and MCP connection. There is no undo.
+          </p>
+          <Button variant="danger" disabled={!me || deleting} onClick={() => void deleteAccount()}>
+            {deleting ? "Deleting…" : "Delete my account"}
+          </Button>
         </div>
       </div>
     </section>

@@ -185,6 +185,7 @@ export const api = {
 
   listConnections: () => request<McpConnection[]>("GET", "/api/authorizations"),
   revokeConnection: (grantId: string) => request<{ revoked: boolean }>("DELETE", `/api/authorizations/${encodeURIComponent(grantId)}`),
+  deleteAccount: () => request<{ deleted: boolean }>("DELETE", "/api/me"),
 };
 
 function encodePath(path: string): string {
