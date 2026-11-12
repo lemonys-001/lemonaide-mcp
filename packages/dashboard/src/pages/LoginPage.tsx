@@ -88,7 +88,7 @@ export function LoginPage() {
 
         <div className="stack">
 <Field label="Email">
-            // deliberate-ignore placeholder-identity (standard login email placeholder)
+            {/* deliberate-ignore placeholder-identity (standard login email placeholder) */}
             <Input value={email} onChange={setEmail} placeholder="you@example.com" type="email" autoFocus />
           </Field>
           {mode === "signup" && (
