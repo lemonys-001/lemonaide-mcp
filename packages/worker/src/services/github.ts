@@ -234,13 +234,33 @@ async function getInstallation(env: Env, installationId: number): Promise<Instal
   return (await githubFetch(`/app/installations/${installationId}`, { token: appJwt })) as InstallationInfo;
 }
 
+/**
+ * Point the app's setup_url (held by GitHub itself) at a fresh signed state.
+ * The state baked into the app at creation expires, so every install/update
+ * callback would fail with "invalid connect callback" — this repairs it.
+ * Best-effort: false on any error (e.g. key issues), never throws.
+ */
+export async function refreshAppSetupUrl(env: Env, userId: string, ttlMs = 90 * 24 * 60 * 60_000): Promise<boolean> {
+  try {
+    const appJwt = await requireAppAuth(env);
+    const state = await signConnectState(env, userId, ttlMs);
+    await githubFetch("/app", {
+      method: "PATCH",
+      token: appJwt,
+      body: { setup_url: `${primaryBase(env)}/api/github/callback?state=${encodeURIComponent(state)}` },
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export async function connectInstallation(
   env: Env,
   db: SupabaseClient,
   actor: Actor,
   installationId: number,
-): Promise<repos.GithubInstallation> {
-  const info = await getInstallation(env, installationId);
+): Promise<repos.GithubInstallation> {  const info = await getInstallation(env, installationId);
   const row = await repos.upsertGithubInstallation(db, {
     userId: actor.userId,
     installationId: info.id,

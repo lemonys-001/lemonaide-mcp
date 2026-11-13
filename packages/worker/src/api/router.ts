@@ -49,6 +49,7 @@ import {
   getGithubAppConfig,
   hasGithubApp,
   readConnectState,
+  refreshAppSetupUrl,
   saveGithubAppConfig,
   signConnectState,
   syncProjectToGitHub,
@@ -493,7 +494,8 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
     if (await hasGithubApp(env)) {
       return c.redirect(`${primaryBase(env)}/#/settings`, 302);
     }
-    const setupState = await signConnectState(env, userId, 60 * 60_000);
+    // Long TTL: GitHub holds this state inside the app's setup_url indefinitely.
+    const setupState = await signConnectState(env, userId, 90 * 24 * 60 * 60_000);
     const manifest = JSON.stringify(buildAppManifest(env, setupState));
     const action = `https://github.com/settings/apps/new?state=${encodeURIComponent(setupState)}`;
     return c.html(
@@ -508,6 +510,9 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
   // Signed, browser-navigable setup link (the manifest page itself has no Bearer).
   app.get("/github/setup-url", async (c) => {
     if (await hasGithubApp(env)) {
+      // Repair: GitHub holds the app's setup_url with an expiring state —
+      // repoint it at a fresh signed state so the next install callback works.
+      await refreshAppSetupUrl(env, c.get("user").userId);
       return jsonOk({ url: null, configured: true }, newCorrelationId());
     }
     const user = c.get("user");
@@ -594,6 +599,10 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
     const installationId = Number(c.req.query("installation_id") ?? 0);
     const state = String(c.req.query("state") ?? "");
     const userId = await readConnectState(env, state);
+    // App-settings updates land here with setup_action=update and no installation.
+    if (!installationId && c.req.query("setup_action") === "update") {
+      return c.redirect(`${primaryBase(env)}/#/settings`, 302);
+    }
     if (!installationId || !userId) {
       return jsonErr(ErrorCode.INVALID_INPUT, "invalid GitHub connect callback", newCorrelationId(), 400);
     }
