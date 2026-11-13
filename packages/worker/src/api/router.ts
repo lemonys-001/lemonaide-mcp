@@ -598,11 +598,22 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
       return jsonErr(ErrorCode.INVALID_INPUT, "invalid GitHub connect callback", newCorrelationId(), 400);
     }
     const db = getSupabaseServiceClient(env);
-    const profile = await getProfile(db, userId);
-    if (!profile) {
-      return jsonErr(ErrorCode.NOT_FOUND, "unknown user for connect state", newCorrelationId(), 404);
+    try {
+      const profile = await getProfile(db, userId);
+      if (!profile) {
+        return jsonErr(ErrorCode.NOT_FOUND, "unknown user for connect state", newCorrelationId(), 404);
+      }
+      await connectInstallation(env, db, { userId: profile.id, username: profile.username, via: "dashboard" }, installationId);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(JSON.stringify({ level: "error", msg: "github connect callback failed", installationId, err: msg }));
+      return c.html(
+        `<!doctype html><html><body style="font-family:system-ui;background:#0f120b;color:#e07a5f;display:grid;place-items:center;min-height:100vh">` +
+          `<p>Connecting GitHub failed: ${msg.replace(/[<>&"]/g, (ch) => `&#${ch.charCodeAt(0)};`)}</p>` +
+          `<p><a href="${primaryBase(env)}/#/settings" style="color:#e9c842">Back to settings</a></p></body></html>`,
+        500,
+      );
     }
-    await connectInstallation(env, db, { userId: profile.id, username: profile.username, via: "dashboard" }, installationId);
     const redirectTo = String(c.req.query("redirect_to") ?? `${primaryBase(env)}/#/settings`);
     return c.redirect(redirectTo, 302);
   });
