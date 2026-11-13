@@ -629,11 +629,8 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
           ? await db.from("profiles").select("id, username").ilike("username", login).maybeSingle()
           : null;
         if (!match?.data) {
-          return c.html(
-            `<!doctype html><html><body style="font-family:system-ui;background:#0f120b;color:#e07a5f;display:grid;place-items:center;min-height:100vh">` +
-              `<p>This setup link expired and the GitHub account <code>${(login ?? "unknown").replace(/[<>&"]/g, (ch) => `&#${ch.charCodeAt(0)};`)}</code> has no matching LemonAIde profile. Start again from the dashboard settings page.</p></body></html>`,
-            400,
-          );
+          // Let the signed-in dashboard link it explicitly (usernames may differ).
+          return c.redirect(`${primaryBase(env)}/?claim=${encodeURIComponent(String(installationId))}#/settings`, 302);
         }
         profile = { id: String(match.data.id), username: String(match.data.username) };
       }
@@ -650,6 +647,23 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
     }
     const redirectTo = String(c.req.query("redirect_to") ?? `${primaryBase(env)}/#/settings`);
     return c.redirect(redirectTo, 302);
+  });
+
+  // Dashboard-driven claim of an installation (stale/foreign setup link).
+  app.post("/github/claim-installation", async (c) => {
+    const user = c.get("user");
+    const body = (await c.req.json().catch(() => ({}))) as { installation_id?: number };
+    const installationId = Number(body.installation_id ?? 0);
+    if (!installationId) {
+      return jsonErr(ErrorCode.INVALID_INPUT, "installation_id required", newCorrelationId(), 400);
+    }
+    const db = getSupabaseServiceClient(env);
+    const profile = await getProfile(db, user.userId);
+    if (!profile) {
+      return jsonErr(ErrorCode.NOT_FOUND, "unknown user", newCorrelationId(), 404);
+    }
+    await connectInstallation(env, db, { userId: profile.id, username: profile.username, via: "dashboard" }, installationId);
+    return jsonOk({ connected: true }, newCorrelationId());
   });
 
   app.get("/projects/:ref/github", async (c) => {

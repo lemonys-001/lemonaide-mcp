@@ -57,6 +57,21 @@ export function App() {
     if (auth === "signedIn") void refreshMe();
   }, [auth, refreshMe]);
 
+  // Claim a GitHub installation handed over by the setup callback (?claim=<id>).
+  useEffect(() => {
+    if (auth !== "signedIn") return;
+    const claim = new URLSearchParams(window.location.search).get("claim");
+    if (!claim) return;
+    api
+      .githubClaim(Number(claim))
+      .catch(() => undefined)
+      .finally(() => {
+        const url = new URL(window.location.href);
+        url.searchParams.delete("claim");
+        window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+      });
+  }, [auth]);
+
   // After sign-in skip the login/marketing pages — go straight to Projects.
   useEffect(() => {
     if (auth === "signedIn" && (section === "login" || section === "signup" || section === "" || section === "home")) {

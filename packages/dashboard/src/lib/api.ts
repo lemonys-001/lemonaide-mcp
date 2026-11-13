@@ -178,6 +178,8 @@ export const api = {
 
   githubStatus: () => request<GithubStatus>("GET", "/api/github/status"),
   githubSetupUrl: () => request<{ url: string | null; configured: boolean }>("GET", "/api/github/setup-url"),
+  githubClaim: (installationId: number) =>
+    request<{ connected: boolean }>("POST", "/api/github/claim-installation", { installation_id: installationId }),
   githubCreateRepo: (ref: string, isPrivate: boolean) =>
     request<{ fullName: string; url: string }>("POST", `/api/projects/${encodeURIComponent(ref)}/github/repo`, { private: isPrivate }),
   githubSync: (ref: string) =>
