@@ -587,6 +587,13 @@ function SettingsTab({ project, onChanged, onError }: { project: Project; onChan
 
   async function connectGithub() {
     if (github?.connectUrl) {
+      setBusy(true);
+      try {
+        // setup-url also refreshes the app's expiring setup_url on GitHub.
+        await api.githubSetupUrl();
+      } catch {
+        // fall through to the stored install URL
+      }
       window.location.href = github.connectUrl;
       return;
     }

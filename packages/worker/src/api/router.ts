@@ -48,6 +48,7 @@ import {
   exchangeManifestCode,
   getGithubAppConfig,
   hasGithubApp,
+  getInstallationLogin,
   readConnectState,
   refreshAppSetupUrl,
   saveGithubAppConfig,
@@ -603,14 +604,38 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
     if (!installationId && c.req.query("setup_action") === "update") {
       return c.redirect(`${primaryBase(env)}/#/settings`, 302);
     }
-    if (!installationId || !userId) {
-      return jsonErr(ErrorCode.INVALID_INPUT, "invalid GitHub connect callback", newCorrelationId(), 400);
+    if (!installationId || (!userId && !c.req.query("installation_id"))) {
+      return c.html(
+        `<!doctype html><html><body style="font-family:system-ui;background:#0f120b;color:#e07a5f;display:grid;place-items:center;min-height:100vh">` +
+          `<p>Invalid GitHub connect callback — start again from the dashboard settings page.</p></body></html>`,
+        400,
+      );
     }
     const db = getSupabaseServiceClient(env);
     try {
-      const profile = await getProfile(db, userId);
+      let profile: { id: string; username: string } | null = userId ? await getProfile(db, userId) : null;
+      if (!profile && userId) {
+        return c.html(
+          `<!doctype html><html><body style="font-family:system-ui;background:#0f120b;color:#e07a5f;display:grid;place-items:center;min-height:100vh">` +
+            `<p>Unknown user for connect state — start again from the dashboard settings page.</p></body></html>`,
+          404,
+        );
+      }
       if (!profile) {
-        return jsonErr(ErrorCode.NOT_FOUND, "unknown user for connect state", newCorrelationId(), 404);
+        // Expired/foreign state but a valid installation: attribute it by
+        // matching the installation's GitHub login to a profile username.
+        const login = await getInstallationLogin(env, installationId);
+        const match = login
+          ? await db.from("profiles").select("id, username").ilike("username", login).maybeSingle()
+          : null;
+        if (!match?.data) {
+          return c.html(
+            `<!doctype html><html><body style="font-family:system-ui;background:#0f120b;color:#e07a5f;display:grid;place-items:center;min-height:100vh">` +
+              `<p>This setup link expired and the GitHub account <code>${(login ?? "unknown").replace(/[<>&"]/g, (ch) => `&#${ch.charCodeAt(0)};`)}</code> has no matching LemonAIde profile. Start again from the dashboard settings page.</p></body></html>`,
+            400,
+          );
+        }
+        profile = { id: String(match.data.id), username: String(match.data.username) };
       }
       await connectInstallation(env, db, { userId: profile.id, username: profile.username, via: "dashboard" }, installationId);
     } catch (err) {

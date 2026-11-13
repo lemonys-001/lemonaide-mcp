@@ -255,6 +255,16 @@ export async function refreshAppSetupUrl(env: Env, userId: string, ttlMs = 90 * 
   }
 }
 
+/** Login on an installation, for attributing stale-state callbacks. Best-effort. */
+export async function getInstallationLogin(env: Env, installationId: number): Promise<string | null> {
+  try {
+    const info = await getInstallation(env, installationId);
+    return info.account?.login ?? null;
+  } catch {
+    return null;
+  }
+}
+
 export async function connectInstallation(
   env: Env,
   db: SupabaseClient,
