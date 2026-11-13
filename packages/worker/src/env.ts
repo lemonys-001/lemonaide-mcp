@@ -25,6 +25,7 @@ export interface Env {
 
   BUILD_RUNNER_TOKEN?: string;
   BUILD_DISPATCH_TOKEN?: string;
+  PLATFORM_REPO?: string;
 
   /** Development-only fake auth. Must never be set in production. */
   DEV_FAKE_AUTH?: string;

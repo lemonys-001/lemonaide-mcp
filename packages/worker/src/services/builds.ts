@@ -152,8 +152,10 @@ async function dispatchGitHubActionsWorkflow(env: Env, buildId: string): Promise
 }
 
 function platformRepo(env: Env): [string, string] {
+  // The GitHub App slug is NOT a repo id — using it here sent dispatches to
+  // repos/{slug}/{slug} and 404'd once the slug env was set.
   const repoEnv = (globalThis as { __PLATFORM_REPO__?: string }).__PLATFORM_REPO__;
-  const value = repoEnv ?? env.GITHUB_APP_SLUG ?? "lemonys-001/lemonaide-mcp";
+  const value = repoEnv ?? env.PLATFORM_REPO ?? "lemonys-001/lemonaide-mcp";
   const [owner, repo] = value.split("/");
   return [owner ?? "lemonys-001", repo ?? "lemonaide-mcp"];
 }

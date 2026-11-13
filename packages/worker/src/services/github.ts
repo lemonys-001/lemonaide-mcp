@@ -199,7 +199,8 @@ export function buildAppManifest(env: Env, setupState: string): Record<string, u
     description: "Publish LemonAIde projects to your own GitHub repositories",
     public: false,
     default_permissions: { contents: "write", metadata: "read", administration: "write" },
-    default_events: ["installation"],
+    // No default_events: "installation" is rejected by the manifest validator,
+    // and installation webhooks are delivered to apps regardless.
     request_oauth_on_install: false,
   };
 }

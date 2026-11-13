@@ -5,7 +5,7 @@ export function HomePage({ onGetStarted }: { onGetStarted: () => void }) {
     <main className="hero">
       <div className="hero-inner">
         <div className="brand">
-          Lem<em>on</em>AIde
+          Lemon<em>AI</em>de
         </div>
         <h1>Your agent builds the app. You watch it go live.</h1>
         <p className="muted">

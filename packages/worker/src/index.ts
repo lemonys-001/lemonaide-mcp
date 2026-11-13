@@ -18,6 +18,7 @@ import { isReservedTopLevel, servePublishedApp } from "./app-router";
 import { handleAuthorizeGet, handleAuthorizePost } from "./auth/authorize";
 import { dispatchBuild } from "./services/builds";
 import { getSupabaseServiceClient } from "./db/supabase";
+import { robotsTxt, sitemapXml } from "./services/seo";
 
 const SCOPES_SUPPORTED = ["mcp:read", "mcp:write", "offline_access"] as const;
 
@@ -82,6 +83,22 @@ const defaultHandler = {
 
     if (path === "/api" || path.startsWith("/api/")) {
       return createApiRouter(env).fetch(request, _ctx);
+    }
+
+    // Crawler surfaces
+    if (path === "/robots.txt") {
+      return new Response(robotsTxt(env), { headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "public, max-age=3600" } });
+    }
+    if (path === "/sitemap.xml") {
+      try {
+        const xml = await sitemapXml(env, getSupabaseServiceClient(env));
+        return new Response(xml, { headers: { "content-type": "application/xml; charset=utf-8", "cache-control": "public, max-age=3600" } });
+      } catch {
+        return new Response('<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>', {
+          status: 200,
+          headers: { "content-type": "application/xml; charset=utf-8" },
+        });
+      }
     }
 
     // Published apps: /{username}/{slug}[/...]

@@ -19,7 +19,7 @@ export function LoginPage() {
     return (
       <main className="auth-shell">
         <div className="auth-card">
-          <div className="brand">Lem<em>on</em>AIde</div>
+          <div className="brand">Lemon<em>AI</em>de</div>
           <h1>Dashboard not configured</h1>
           <Notice tone="warn">
             Set <code>VITE_SUPABASE_URL</code> and <code>VITE_SUPABASE_ANON_KEY</code> in <code>.env</code>, then
@@ -79,7 +79,7 @@ export function LoginPage() {
   return (
     <main className="auth-shell">
       <div className="auth-card">
-        <div className="brand">Lem<em>on</em>AIde</div>
+        <div className="brand">Lemon<em>AI</em>de</div>
         <h1>{mode === "login" ? "Sign in" : "Create your account"}</h1>
         <p className="muted">Build and publish static web apps from your MCP client.</p>
 

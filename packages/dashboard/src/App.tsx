@@ -97,7 +97,7 @@ export function App() {
     <div className="app">
       <header className="topbar">
         <a className="brand" href="#/">
-          Lem<em>on</em>AIde
+          Lemon<em>AI</em>de
         </a>
         <nav className="topnav">
           <a href="#/" className={`toplink${section !== "settings" && section !== "docs" ? " active" : ""}`}>
