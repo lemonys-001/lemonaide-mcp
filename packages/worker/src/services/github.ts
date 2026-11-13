@@ -190,11 +190,11 @@ export function buildAppManifest(env: Env, setupState: string): Record<string, u
   const base = primaryBase(env);
   return {
     name: "LemonAIde",
-    url: `https://${base}`,
-    hook_attributes: { url: `https://${base}/api/github/webhook`, active: true },
-    redirect_url: `https://${base}/api/github/manifest-setup`,
-    callback_urls: [`https://${base}/api/github/callback`],
-    setup_url: `https://${base}/api/github/callback?state=${encodeURIComponent(setupState)}`,
+    url: `${base}`,
+    hook_attributes: { url: `${base}/api/github/webhook`, active: true },
+    redirect_url: `${base}/api/github/manifest-setup`,
+    callback_urls: [`${base}/api/github/callback`],
+    setup_url: `${base}/api/github/callback?state=${encodeURIComponent(setupState)}`,
     setup_on_update: true,
     description: "Publish LemonAIde projects to your own GitHub repositories",
     public: false,
