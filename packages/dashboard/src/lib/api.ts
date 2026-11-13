@@ -177,7 +177,7 @@ export const api = {
   unpublish: (ref: string) => request<{ unpublished: boolean }>("DELETE", `/api/projects/${encodeURIComponent(ref)}/deployments`),
 
   githubStatus: () => request<GithubStatus>("GET", "/api/github/status"),
-  githubConnectUrl: () => request<{ url: string }>("GET", "/api/github/connect-url"),
+  githubSetupUrl: () => request<{ url: string | null; configured: boolean }>("GET", "/api/github/setup-url"),
   githubCreateRepo: (ref: string, isPrivate: boolean) =>
     request<{ fullName: string; url: string }>("POST", `/api/projects/${encodeURIComponent(ref)}/github/repo`, { private: isPrivate }),
   githubSync: (ref: string) =>

@@ -179,6 +179,7 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
     //  - GitHub webhook: X-Hub-Signature-256 HMAC over the raw body
     if (
       (c.req.method === "GET" && c.req.path === "/api/github/callback") ||
+      (c.req.method === "GET" && c.req.path === "/api/github/app-manifest") ||
       (c.req.method === "GET" && c.req.path === "/api/github/manifest-setup") ||
       (c.req.method === "POST" && c.req.path === "/api/github/webhook") ||
       (c.req.method === "POST" && c.req.path === "/api/auth/session-bootstrap")
@@ -464,11 +465,9 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
       } catch {
         url = null;
       }
-    } else {
-      // App not registered yet: the owner sets it up in one click via the
-      // manifest flow (this endpoint serves the auto-submitting form page).
-      url = `${primaryBase(env)}/api/github/app-manifest`;
     }
+    // App not registered yet: the owner mints a signed setup link from
+    // GET /github/setup-url (the manifest page has no Bearer auth).
     return jsonOk(
       { mode: appMode ? "app" : "none", connected: false, account: null, connectUrl: url },
       newCorrelationId(),
@@ -478,12 +477,23 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
   // One-time owner setup: serves a page that POSTs the app manifest to GitHub.
   // GitHub then redirects back to /github/manifest-setup with a code we trade
   // for the app's credentials (stored in KV — no redeploy needed).
+  // Serves a page that POSTs the app manifest to GitHub. Public but bound to a
+  // signed state (same HMAC as the connect flow) so only a signed-in owner's
+  // dashboard can mint the link.
   app.get("/github/app-manifest", async (c) => {
-    const user = c.get("user");
+    const state = c.req.query("state") ?? "";
+    const userId = await readConnectState(env, state);
+    if (!userId) {
+      return c.html(
+        `<!doctype html><html><body style="font-family:system-ui;background:#0f120b;color:#e07a5f;display:grid;place-items:center;min-height:100vh">` +
+          `<p>Invalid setup link — start again from the dashboard.</p></body></html>`,
+        401,
+      );
+    }
     if (await hasGithubApp(env)) {
       return c.redirect(`${primaryBase(env)}/#/settings`, 302);
     }
-    const setupState = await signConnectState(env, user.userId, 60 * 60_000);
+    const setupState = await signConnectState(env, userId, 60 * 60_000);
     const manifest = JSON.stringify(buildAppManifest(env, setupState));
     const action = `https://github.com/settings/apps/new?state=${encodeURIComponent(setupState)}`;
     return c.html(
@@ -493,6 +503,16 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
         `<script>document.getElementById("f").submit()</script>` +
         `</body></html>`,
     );
+  });
+
+  // Signed, browser-navigable setup link (the manifest page itself has no Bearer).
+  app.get("/github/setup-url", async (c) => {
+    if (await hasGithubApp(env)) {
+      return jsonOk({ url: null, configured: true }, newCorrelationId());
+    }
+    const user = c.get("user");
+    const state = await signConnectState(env, user.userId, 60 * 60_000);
+    return jsonOk({ url: `${primaryBase(env)}/api/github/app-manifest?state=${encodeURIComponent(state)}`, configured: false }, newCorrelationId());
   });
 
   app.get("/github/manifest-setup", async (c) => {

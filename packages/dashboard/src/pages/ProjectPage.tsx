@@ -586,8 +586,23 @@ function SettingsTab({ project, onChanged, onError }: { project: Project; onChan
   }
 
   async function connectGithub() {
-    if (!github?.connectUrl) return;
-    window.location.href = github.connectUrl;
+    if (github?.connectUrl) {
+      window.location.href = github.connectUrl;
+      return;
+    }
+    setBusy(true);
+    try {
+      const { url } = await api.githubSetupUrl();
+      if (!url) {
+        onError("GitHub sync is already set up — reload the page.");
+        return;
+      }
+      window.location.href = url;
+    } catch (err) {
+      onError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function createRepo() {
