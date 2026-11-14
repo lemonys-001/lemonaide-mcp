@@ -1,3 +1,4 @@
+import { AdBanner } from "../components/AdBanner";
 import { Button } from "../components/ui";
 
 const BASE = "https://lemonaide-mcp.lemonys.workers.dev";
@@ -96,6 +97,7 @@ export function DocsPage({ onBack }: { onBack: () => void }) {
           </ul>
         </Section>
       </div>
+      <AdBanner />
     </section>
   );
 }

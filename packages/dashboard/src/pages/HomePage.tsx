@@ -1,3 +1,4 @@
+import { AdBanner } from "../components/AdBanner";
 import { Button } from "../components/ui";
 
 export function HomePage({ onGetStarted }: { onGetStarted: () => void }) {
@@ -25,6 +26,7 @@ export function HomePage({ onGetStarted }: { onGetStarted: () => void }) {
           <p className="muted small">One URL per project. The agent does the rest.</p>
         </div>
       </div>
+      <AdBanner />
     </main>
   );
 }
