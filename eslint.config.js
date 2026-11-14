@@ -9,6 +9,7 @@ export default tseslint.config(
       "**/.wrangler/**",
       "**/coverage/**",
       "packages/dashboard/dist/**",
+      "scripts/**",
     ],
   },
   js.configs.recommended,
