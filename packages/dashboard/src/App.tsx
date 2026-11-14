@@ -119,7 +119,7 @@ export function App() {
             Projects
           </a>
           <a href="#/docs" className={`toplink${section === "docs" ? " active" : ""}`}>
-            Docs
+            Help
           </a>
           <a href="#/settings" className={`toplink${section === "settings" ? " active" : ""}`}>
             Settings

@@ -614,25 +614,19 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
     const db = getSupabaseServiceClient(env);
     try {
       let profile: { id: string; username: string } | null = userId ? await getProfile(db, userId) : null;
-      if (!profile && userId) {
-        return c.html(
-          `<!doctype html><html><body style="font-family:system-ui;background:#0f120b;color:#e07a5f;display:grid;place-items:center;min-height:100vh">` +
-            `<p>Unknown user for connect state — start again from the dashboard settings page.</p></body></html>`,
-          404,
-        );
-      }
       if (!profile) {
-        // Expired/foreign state but a valid installation: attribute it by
-        // matching the installation's GitHub login to a profile username.
+        // Expired state, or the state's user no longer exists (e.g. after a
+        // database reset): attribute by the installation's GitHub login, else
+        // hand the installation to the signed-in dashboard to claim.
         const login = await getInstallationLogin(env, installationId);
         const match = login
           ? await db.from("profiles").select("id, username").ilike("username", login).maybeSingle()
           : null;
-        if (!match?.data) {
-          // Let the signed-in dashboard link it explicitly (usernames may differ).
+        if (match?.data) {
+          profile = { id: String(match.data.id), username: String(match.data.username) };
+        } else {
           return c.redirect(`${primaryBase(env)}/?claim=${encodeURIComponent(String(installationId))}#/settings`, 302);
         }
-        profile = { id: String(match.data.id), username: String(match.data.username) };
       }
       await connectInstallation(env, db, { userId: profile.id, username: profile.username, via: "dashboard" }, installationId);
     } catch (err) {
