@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type Project } from "../lib/api";
 import { Badge, Button, EmptyState, ErrorBanner, Field, Input, Spinner, buildTone, timeAgo } from "../components/ui";
+import { AdBanner } from "../components/AdBanner";
 
 const FRAMEWORKS = [
   { id: "vanilla-html", label: "Vanilla HTML", blurb: "Plain index.html — zero tooling" },
@@ -142,6 +143,8 @@ export function ProjectsPage({ onOpen }: { onOpen: (slug: string) => void }) {
           })}
         </div>
       )}
+
+      <AdBanner />
     </section>
   );
 }

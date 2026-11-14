@@ -2,6 +2,7 @@ import { useState } from "react";
 import { supabase, supabaseConfigured } from "../lib/supabase";
 import { api } from "../lib/api";
 import { Button, ErrorBanner, Field, Input, Notice } from "../components/ui";
+import { AdBanner } from "../components/AdBanner";
 
 export function LoginPage() {
   const [mode, setMode] = useState<"login" | "signup">("login");
@@ -162,6 +163,7 @@ export function LoginPage() {
           {mode === "login" ? "Need an account? Sign up" : "Have an account? Sign in"}
         </button>
       </div>
+      <AdBanner />
     </main>
   );
 }

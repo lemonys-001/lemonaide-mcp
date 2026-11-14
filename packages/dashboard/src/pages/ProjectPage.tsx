@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { AdBanner } from "../components/AdBanner";
 import {
   api,
   type Build,
@@ -749,6 +750,7 @@ function SettingsTab({ project, onChanged, onError }: { project: Project; onChan
           </Button>
         </div>
       </div>
+      <AdBanner />
     </div>
   );
 }
