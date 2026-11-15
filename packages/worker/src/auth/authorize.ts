@@ -211,6 +211,31 @@ export async function handleAuthorizePost(request: Request, env: Env): Promise<R
       return new Response(null, { status: 302, headers });
     }
 
+    const email = String(form.get("email") ?? "").trim();
+    const password = String(form.get("password") ?? "");
+    if (!email || !password) {
+      return renderError("Sign-in required", "Email and password are required to connect.");
+    }
+
+    // Sign in BEFORE consuming the consent transaction — a failed sign-in must
+    // leave the transaction intact so the user can retry the same form.
+    let session: SupabaseSession;
+    try {
+      session = await supabasePasswordGrant(env, email, password);
+    } catch {
+      // No account yet? Migrate-onboarding path: create it, then continue.
+      try {
+        session = await supabaseSignupGrant(env, email, password);
+      } catch (signupErr) {
+        return renderError(
+          "Sign-in failed",
+          signupErr instanceof SupabaseAuthError
+            ? signupErr.message
+            : "Email or password is incorrect. Create your account on the dashboard first if needed.",
+        );
+      }
+    }
+
     const approved = await oauth.approveConsent(request, handle, { scope: FULL_SCOPES });
 
     // Development shortcut: complete authorization without Supabase.
@@ -228,28 +253,6 @@ export async function handleAuthorizePost(request: Request, env: Env): Promise<R
       return new Response(null, { status: 302, headers });
     }
 
-    const email = String(form.get("email") ?? "").trim();
-    const password = String(form.get("password") ?? "");
-    if (!email || !password) {
-      return renderError("Sign-in required", "Email and password are required to connect.");
-    }
-
-    let session: SupabaseSession;
-    try {
-      session = await supabasePasswordGrant(env, email, password);
-    } catch {
-      // No account yet? Migrate-onboarding path: create it, then continue.
-      try {
-        session = await supabaseSignupGrant(env, email, password);
-      } catch (signupErr) {
-        return renderError(
-          "Sign-in failed",
-          signupErr instanceof SupabaseAuthError
-            ? signupErr.message
-            : "Email or password is incorrect. Create your account on the dashboard first if needed.",
-        );
-      }
-    }
     const db = getSupabaseServiceClient(env);
     const meta = session.user.user_metadata as Record<string, unknown> | undefined;
     const profile = await ensureProfile(db, session.user.id, {
