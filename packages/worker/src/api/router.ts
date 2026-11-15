@@ -56,6 +56,7 @@ import {
   syncProjectToGitHub,
 } from "../services/github";
 import { deleteSourceFile, getSourceFile, listSourceFiles, putSourceFile } from "../storage/source";
+import { GithubApiError } from "../github/api";
 
 interface ApiUser {
   userId: string;
@@ -764,6 +765,12 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
   /* Errors */
 
   app.onError((err, _c) => {
+    if (err instanceof GithubApiError) {
+      console.error(JSON.stringify({ level: "error", msg: "github api error", status: err.status, err: err.message, body: err.body?.slice(0, 400) }));
+      return jsonErr(ErrorCode.GITHUB_ERROR, `GitHub rejected the request (${err.status}): ${err.message}`, newCorrelationId(), 502, {
+        details: err.body ? { github: err.body.slice(0, 400) } : undefined,
+      });
+    }
     if (err instanceof LemonAIdeError) {
       return jsonErr(err.code, err.message, newCorrelationId(), httpStatusForErrorCode(err.code), {
         details: typeof err.details === "object" && err.details ? (err.details as Record<string, unknown>) : undefined,

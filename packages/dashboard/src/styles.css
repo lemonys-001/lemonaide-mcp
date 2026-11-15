@@ -950,3 +950,58 @@ h3 {
     transform: none;
   }
 }
+
+/* ---------- code editor ---------- */
+
+.editor-shell {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+.editor-wrap {
+  display: flex;
+  flex: 1;
+  min-height: 420px;
+}
+.editor-gutter {
+  flex: none;
+  width: 52px;
+  overflow: hidden;
+  user-select: none;
+  text-align: right;
+  padding: 14px 10px 14px 0;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-right: none;
+  border-radius: var(--radius-inner) 0 0 var(--radius-inner);
+  color: var(--muted);
+  font-size: 13.5px;
+  line-height: 1.6;
+  opacity: 0.75;
+}
+.editor-gutter .active {
+  color: var(--fg);
+  opacity: 1;
+}
+.editor-shell .editor {
+  border-radius: 0 var(--radius-inner) var(--radius-inner) 0;
+  white-space: pre;
+  overflow-x: auto;
+}
+.editor-status {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 10px;
+  font-size: 12px;
+  color: var(--muted);
+  border-top: 1px solid var(--line);
+}
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}

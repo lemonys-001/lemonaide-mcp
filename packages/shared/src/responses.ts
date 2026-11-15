@@ -74,6 +74,9 @@ export function httpStatusForErrorCode(code: string): number {
     case "UNSUPPORTED_FRAMEWORK":
       return 422;
     case "GITHUB_NOT_CONNECTED":
+      return 424;
+    case "GITHUB_ERROR":
+      return 502;
     case "NOT_CONFIGURED":
       return 424;
     case "GITHUB_SECRET_DETECTED":

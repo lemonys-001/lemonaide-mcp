@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AdBanner } from "../components/AdBanner";
+import { CodeEditor } from "../components/CodeEditor";
 import {
   api,
   type Build,
@@ -269,20 +270,15 @@ function FilesTab({ project, onError }: { project: Project; onError: (msg: strin
           </div>
         </div>
         {selected ? (
-          <textarea
-            className="editor mono"
-            spellCheck={false}
+          <CodeEditor
+            path={selected}
             value={content}
-            onChange={(e) => {
-              setContent(e.target.value);
+            onChange={(v) => {
+              setContent(v);
               setDirty(true);
             }}
-            onKeyDown={(e) => {
-              if ((e.metaKey || e.ctrlKey) && e.key === "s") {
-                e.preventDefault();
-                void save();
-              }
-            }}
+            onSave={() => void save()}
+            disabled={saving}
           />
         ) : (
           <EmptyState title="Select a file" body="Or add one on the left. Cmd/Ctrl+S saves." />
