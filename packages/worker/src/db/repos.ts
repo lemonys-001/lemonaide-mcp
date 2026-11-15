@@ -207,7 +207,7 @@ export async function updateProject(
   db: SupabaseClient,
   ownerId: string,
   projectId: string,
-  patch: Partial<Pick<Project, "name" | "slug" | "description" | "status">>,
+  patch: Partial<Pick<Project, "name" | "slug" | "description" | "status" | "framework">>,
 ): Promise<Project> {
   const { data, error } = await db
     .from("projects")

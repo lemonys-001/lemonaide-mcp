@@ -140,7 +140,7 @@ export const api = {
     ),
 
   listProjects: (status = "active") => request<Project[]>("GET", "/api/projects", undefined, { status }),
-  createProject: (input: { name: string; description?: string; framework?: string; slug?: string }) =>
+  createProject: (input: { name: string; description?: string; framework?: string; slug?: string; fromRepo?: string }) =>
     request<Project>("POST", "/api/projects", input),
   getProject: (ref: string) => request<Project>("GET", `/api/projects/${encodeURIComponent(ref)}`),
   updateProject: (ref: string, input: { name?: string; description?: string | null; update_slug?: boolean; status?: string }) =>
@@ -183,6 +183,8 @@ export const api = {
     request<{ connected: boolean }>("POST", "/api/github/claim-installation", { installation_id: installationId }),
   githubCreateRepo: (ref: string, isPrivate: boolean) =>
     request<{ fullName: string; url: string }>("POST", `/api/projects/${encodeURIComponent(ref)}/github/repo`, { private: isPrivate }),
+  githubLinkRepo: (ref: string, fullName: string) =>
+    request<{ fullName: string; url: string }>("POST", `/api/projects/${encodeURIComponent(ref)}/github/repo`, { full_name: fullName }),
   githubSync: (ref: string) =>
     request<{ commitSha: string; fileCount: number; repoFullName: string }>("POST", `/api/projects/${encodeURIComponent(ref)}/github/sync`),
 

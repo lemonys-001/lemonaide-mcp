@@ -556,6 +556,7 @@ function SettingsTab({ project, onChanged, onError }: { project: Project; onChan
   const [saved, setSaved] = useState(false);
   const [github, setGithub] = useState<{ mode: string; connected: boolean; account: string | null; connectUrl: string | null } | null>(null);
   const [repoUrl, setRepoUrl] = useState<string | null>(null);
+  const [linkRepo, setLinkRepo] = useState("");
   const [privateRepo, setPrivateRepo] = useState(true);
 
   useEffect(() => {
@@ -619,6 +620,21 @@ function SettingsTab({ project, onChanged, onError }: { project: Project; onChan
     try {
       const res = await api.githubCreateRepo(project.slug, privateRepo);
       setRepoUrl(res.url);
+    } catch (err) {
+      onError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function attachRepo() {
+    const fullName = linkRepo.trim();
+    if (!fullName) return;
+    setBusy(true);
+    try {
+      const res = await api.githubLinkRepo(project.slug, fullName);
+      setRepoUrl(res.url);
+      setLinkRepo("");
     } catch (err) {
       onError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -695,6 +711,12 @@ function SettingsTab({ project, onChanged, onError }: { project: Project; onChan
               </Button>
               <Button variant="ghost" onClick={sync} disabled={busy}>
                 Sync files → GitHub
+              </Button>
+            </div>
+            <div className="row gap">
+              <Input value={linkRepo} onChange={setLinkRepo} mono placeholder="owner/existing-repo" />
+              <Button small onClick={attachRepo} disabled={busy || !linkRepo.trim()}>
+                Link existing repo
               </Button>
             </div>
             {repoUrl && (

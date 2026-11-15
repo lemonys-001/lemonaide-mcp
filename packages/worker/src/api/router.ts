@@ -44,6 +44,8 @@ import {
   connectInstallation,
   connectUrl,
   createRepoForProject,
+  importRepoFiles,
+  linkRepoForProject,
   disconnectRepo,
   exchangeManifestCode,
   getGithubAppConfig,
@@ -313,6 +315,12 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
       framework: body.framework,
       slug: body.slug ? String(body.slug) : undefined,
     });
+    if (body.fromRepo) {
+      const imported = await importRepoFiles(env, db, actorOf(user), project, String(body.fromRepo));
+      if (imported.framework && imported.framework !== project.framework) {
+        await repos.updateProject(db, user.userId, project.id, { framework: imported.framework as repos.Project["framework"] });
+      }
+    }
     return jsonOk({ ...project, liveUrl: liveUrlFor(env, user.username, project.slug) }, newCorrelationId(), 201);
   });
 
@@ -702,7 +710,11 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
   app.post("/projects/:ref/github/repo", async (c) => {
     const user = c.get("user");
     const { db, project } = await requireProjectFor(env, user, c.req.param("ref"));
-    const body = (await c.req.json().catch(() => ({}))) as { private?: boolean };
+    const body = (await c.req.json().catch(() => ({}))) as { private?: boolean; full_name?: string };
+    if (body.full_name) {
+      const linked = await linkRepoForProject(env, db, actorOf(user), project, String(body.full_name));
+      return jsonOk({ fullName: linked.repoFullName, url: linked.repoUrl }, newCorrelationId(), 201);
+    }
     const { repo } = await createRepoForProject(env, db, actorOf(user), project, { privateRepo: body.private ?? true });
     return jsonOk({ fullName: repo.repo_full_name, url: repo.repo_url, defaultBranch: repo.default_branch }, newCorrelationId(), 201);
   });

@@ -5,7 +5,7 @@
  */
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { ErrorCode, LemonAIdeError } from "@lemonaide/shared";
+import { ErrorCode, LemonAIdeError, type Framework } from "@lemonaide/shared";
 import type { Env } from "../env";
 import { isProduction } from "../env";
 import * as repos from "../db/repos";
@@ -22,7 +22,7 @@ import {
   githubFetch,
 } from "../github/api";
 import { scanForSecrets, describeFindings } from "../github/scan";
-import { getSourceFile, listSourceFiles } from "../storage/source";
+import { deleteSourceFile, getSourceFile, listSourceFiles, putSourceFile } from "../storage/source";
 import type { Actor } from "./projects";
 
 const encoder = new TextEncoder();
@@ -467,4 +467,183 @@ function b64FromText(text: string): string {
   let bin = "";
   for (const b of bytes) bin += String.fromCharCode(b);
   return btoa(bin);
+}
+
+/* ------------------------------------------------------------------ */
+/* Link existing repo / import from repo                               */
+/* ------------------------------------------------------------------ */
+
+const MAX_IMPORT_FILES = 200;
+const MAX_IMPORT_FILE_BYTES = 512 * 1024;
+const MAX_IMPORT_TOTAL_BYTES = 5 * 1024 * 1024;
+
+const BINARY_PATH_RE =
+  /\.(png|jpe?g|gif|webp|avif|ico|woff2?|ttf|otf|eot|mp3|mp4|webm|mov|pdf|zip|gz|tar|wasm|exe|dll|so|dylib|bin|dat|sqlite|db)$/i;
+
+/** Accept "owner/name", full URLs, and ".git" suffixes. */
+export function normalizeRepoFullName(input: string): string {
+  const s = input
+    .trim()
+    .replace(/^https?:\/\/github\.com\//i, "")
+    .replace(/^github\.com\//i, "")
+    .replace(/\.git$/i, "");
+  const parts = s.split("/").filter(Boolean);
+  if (parts.length < 2 || !parts[0] || !parts[1]) {
+    throw new LemonAIdeError(ErrorCode.INVALID_INPUT, 'repository must look like "owner/name"');
+  }
+  return `${parts[0]}/${parts[1]}`;
+}
+
+export async function linkRepoForProject(
+  env: Env,
+  db: SupabaseClient,
+  actor: Actor,
+  project: repos.Project,
+  rawFullName: string,
+): Promise<{ repoFullName: string; repoUrl: string }> {
+  const installation = await repos.getGithubInstallation(db, actor.userId);
+  if (!installation) {
+    throw new LemonAIdeError(ErrorCode.NOT_CONFIGURED, "connect your GitHub account first");
+  }
+  const existing = await repos.getGithubRepository(db, project.id);
+  if (existing) {
+    throw new LemonAIdeError(ErrorCode.ALREADY_EXISTS, "this project is already connected to a GitHub repository");
+  }
+  const fullName = normalizeRepoFullName(rawFullName);
+  const token = await repoApiToken(env, installation);
+  let info: { html_url: string; default_branch: string; private: boolean };
+  try {
+    info = (await githubFetch(`/repos/${fullName}`, { token })) as typeof info;
+  } catch (err) {
+    if (err instanceof GithubApiError && (err.status === 404 || err.status === 403)) {
+      throw new LemonAIdeError(
+        ErrorCode.INVALID_INPUT,
+        `the GitHub App can't access ${fullName} — on GitHub: Settings → Applications → lemonaide-build → Repository access, include it (or switch to "All repositories")`,
+      );
+    }
+    throw err;
+  }
+  await repos.upsertGithubRepository(db, {
+    projectId: project.id,
+    installationId: installation.installation_id,
+    repoFullName: fullName,
+    repoUrl: info.html_url,
+    defaultBranch: info.default_branch ?? "main",
+    isPrivate: info.private,
+  });
+  await recordAudit(db, {
+    userId: actor.userId,
+    actorType: actor.via,
+    action: "github.link_repo",
+    targetType: "project",
+    targetId: project.id,
+    meta: { repo: fullName },
+  });
+  return { repoFullName: fullName, repoUrl: info.html_url };
+}
+
+function detectFramework(paths: string[], fileContents: Map<string, string>): Framework | null {
+  const has = (p: string) => paths.includes(p);
+  const pkg = fileContents.get("package.json");
+  const pkgDeps = (() => {
+    try {
+      const parsed = JSON.parse(pkg ?? "{}") as { dependencies?: Record<string, string>; devDependencies?: Record<string, string> };
+      return Object.keys({ ...parsed.dependencies, ...parsed.devDependencies });
+    } catch {
+      return [] as string[];
+    }
+  })();
+  const hasVite = paths.some((p) => /^vite\.config\.(t|j)sx?$/.test(p));
+  const hasReact = pkgDeps.some((d) => d.startsWith("react"));
+  if (hasVite && hasReact) return "vite-react-ts";
+  if (hasVite) return "vite-vanilla";
+  if (has("package.json") && pkgDeps.length > 0) return "static-site";
+  if (has("index.html")) return "vanilla-html";
+  return null;
+}
+
+export interface ImportResult {
+  repoFullName: string;
+  fileCount: number;
+  totalBytes: number;
+  framework: string | null;
+}
+
+export async function importRepoFiles(
+  env: Env,
+  db: SupabaseClient,
+  actor: Actor,
+  project: repos.Project,
+  rawFullName: string,
+): Promise<ImportResult> {
+  const fullName = normalizeRepoFullName(rawFullName);
+  const installation = await repos.getGithubInstallation(db, actor.userId);
+  // Private repos need the installation token; public repos work anonymously.
+  const token = installation ? await repoApiToken(env, installation) : undefined;
+  const authOpts = { token };
+
+  const info = (await githubFetch(`/repos/${fullName}`, authOpts)) as { default_branch: string; private: boolean };
+  if (info.private && !token) {
+    throw new LemonAIdeError(ErrorCode.GITHUB_NOT_CONNECTED, `${fullName} is private — connect your GitHub account with access to it first`);
+  }
+  const branch = info.default_branch || "main";
+  const tree = (await githubFetch(`/repos/${fullName}/git/trees/${branch}?recursive=1`, authOpts)) as {
+    tree: { path: string; type: string; size?: number; sha: string }[];
+  };
+
+  const candidates = tree.tree.filter(
+    (e) => e.type === "blob" && !BINARY_PATH_RE.test(e.path) && (e.size ?? 0) <= MAX_IMPORT_FILE_BYTES,
+  );
+  if (candidates.length === 0) {
+    throw new LemonAIdeError(ErrorCode.INVALID_INPUT, `no importable text files found in ${fullName}`);
+  }
+  if (candidates.length > MAX_IMPORT_FILES) {
+    throw new LemonAIdeError(ErrorCode.INVALID_INPUT, `${fullName} has too many files to import (${candidates.length} > ${MAX_IMPORT_FILES})`);
+  }
+
+  const contents = new Map<string, string>();
+  let total = 0;
+  for (const entry of candidates) {
+    if (total + (entry.size ?? 0) > MAX_IMPORT_TOTAL_BYTES) break;
+    const blob = (await githubFetch(`/repos/${fullName}/git/blobs/${entry.sha}`, authOpts)) as {
+      content: string;
+      encoding: string;
+    };
+    if (blob.encoding !== "base64") continue;
+    const bytesArr = Uint8Array.from(atob(blob.content.replace(/\n/g, "")), (ch) => ch.charCodeAt(0));
+    const text = new TextDecoder("utf-8").decode(bytesArr);
+    contents.set(entry.path, text);
+    total += entry.size ?? text.length;
+  }
+
+  for (const [path, content] of contents) {
+    const { size, sha256 } = await putSourceFile(env.BLOB_STORE, project.id, path, content);
+    await repos.upsertFileRows(db, project.id, [{ path, size, sha256 }]);
+  }
+
+  // Drop template/leftover files that the repo doesn't contain.
+  const existingRows = await repos.listFileRows(db, project.id);
+  for (const row of existingRows) {
+    if (!contents.has(row.path)) {
+      await repos.deleteFileRow(db, project.id, row.path);
+      await deleteSourceFile(env.BLOB_STORE, project.id, row.path);
+    }
+  }
+
+  await recordAudit(db, {
+    userId: actor.userId,
+    actorType: actor.via,
+    action: "github.import",
+    targetType: "project",
+    targetId: project.id,
+    meta: { repo: fullName, fileCount: contents.size },
+  });
+
+  const detected = detectFramework([...contents.keys()], contents);
+  return {
+    repoFullName: fullName,
+    fileCount: contents.size,
+    totalBytes: total,
+    framework: detected,
+  };
 }

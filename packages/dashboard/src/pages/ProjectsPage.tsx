@@ -17,6 +17,7 @@ export function ProjectsPage({ onOpen }: { onOpen: (slug: string) => void }) {
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [framework, setFramework] = useState("vanilla-html");
+  const [fromRepo, setFromRepo] = useState("");
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(async () => {
@@ -42,7 +43,12 @@ export function ProjectsPage({ onOpen }: { onOpen: (slug: string) => void }) {
     setBusy(true);
     setError("");
     try {
-      const project = await api.createProject({ name: name.trim(), framework });
+      const project = await api.createProject({
+        name: name.trim(),
+        framework,
+        fromRepo: fromRepo.trim() || undefined,
+      });
+      setFromRepo("");
       setName("");
       setCreating(false);
       onOpen(project.slug);
@@ -102,6 +108,9 @@ export function ProjectsPage({ onOpen }: { onOpen: (slug: string) => void }) {
               </button>
             ))}
           </div>
+          <Field label="Import from GitHub repo" hint="Optional. Public repos work without connecting GitHub; private repos need your account connected.">
+            <Input value={fromRepo} onChange={setFromRepo} mono placeholder="owner/repo" />
+          </Field>
           <div className="row end">
             <Button onClick={create} disabled={busy || !name.trim()}>
               {busy ? "Creating…" : "Create project"}

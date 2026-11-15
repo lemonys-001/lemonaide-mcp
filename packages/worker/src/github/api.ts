@@ -19,7 +19,8 @@ const API_VERSION = "2022-11-28";
 
 export interface GithubRequestOptions {
   method?: string;
-  token: string;
+  /** Omit for unauthenticated (public-data) requests. */
+  token?: string;
   body?: unknown;
   accept?: string;
   /** Return the raw Response instead of parsing JSON (for 204s, zips, etc). */
@@ -34,7 +35,7 @@ export async function githubFetch(path: string, opts: GithubRequestOptions): Pro
       // GitHub requires a user-agent; Workers fetch sends none by default.
       "user-agent": "lemonaide-mcp-worker",
       accept: opts.accept ?? "application/vnd.github+json",
-      authorization: `Bearer ${opts.token}`,
+      ...(opts.token ? { authorization: `Bearer ${opts.token}` } : {}),
       "x-github-api-version": API_VERSION,
       ...(opts.body ? { "content-type": "application/json" } : {}),
     },

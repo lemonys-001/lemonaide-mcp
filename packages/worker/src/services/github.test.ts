@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Env } from "../env";
-import { connectUrl, readConnectState, signConnectState, verifyConnectState } from "./github";
+import { connectUrl, normalizeRepoFullName, readConnectState, signConnectState, verifyConnectState } from "./github";
 
 function fakeEnv(overrides: Partial<Env> = {}): Env {
   return {
@@ -70,5 +70,21 @@ describe("connectUrl", () => {
 
   it("throws NOT_CONFIGURED without app config", async () => {
     await expect(connectUrl(fakeEnv())).rejects.toThrow(/not configured/i);
+  });
+});
+
+describe("normalizeRepoFullName", () => {
+  it.each([
+    ["owner/repo", "owner/repo"],
+    ["https://github.com/owner/repo", "owner/repo"],
+    ["github.com/owner/repo", "owner/repo"],
+    ["owner/repo.git", "owner/repo"],
+    ["https://github.com/owner/repo.git", "owner/repo"],
+    ["  owner/repo  ", "owner/repo"],
+  ])("%s → %s", (input, expected) => {
+    expect(normalizeRepoFullName(input)).toBe(expected);
+  });
+  it("rejects non repo-ish input", () => {
+    expect(() => normalizeRepoFullName("just-a-name")).toThrow(/owner\/name/);
   });
 });
