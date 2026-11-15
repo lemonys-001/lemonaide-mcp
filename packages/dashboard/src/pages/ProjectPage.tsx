@@ -26,6 +26,7 @@ type Tab = "files" | "builds" | "deployments" | "settings";
 
 export function ProjectPage({ projectRef, onBack }: { projectRef: string; onBack: () => void }) {
   const [project, setProject] = useState<Project | null>(null);
+  const [owner, setOwner] = useState("me");
   const [tab, setTab] = useState<Tab>("files");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
@@ -40,6 +41,10 @@ export function ProjectPage({ projectRef, onBack }: { projectRef: string; onBack
       setLoading(false);
     }
   }, [projectRef]);
+
+  useEffect(() => {
+    api.me().then((m) => setOwner(m.username)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     void refresh();
@@ -74,7 +79,7 @@ export function ProjectPage({ projectRef, onBack }: { projectRef: string; onBack
           </h1>
           <p className="muted row gap" style={{ flexWrap: "wrap" }}>
             <span className="route-plate">
-              /me/<strong>{project.slug}</strong>
+              /{owner}/<strong>{project.slug}</strong>
             </span>
             <span>{project.framework}</span>
             {project.liveUrl && (

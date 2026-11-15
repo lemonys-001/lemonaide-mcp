@@ -12,6 +12,7 @@ const FRAMEWORKS = [
 
 export function ProjectsPage({ onOpen }: { onOpen: (slug: string) => void }) {
   const [projects, setProjects] = useState<Project[] | null>(null);
+  const [owner, setOwner] = useState("me");
   const [error, setError] = useState("");
   const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
@@ -31,6 +32,10 @@ export function ProjectsPage({ onOpen }: { onOpen: (slug: string) => void }) {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    api.me().then((m) => setOwner(m.username)).catch(() => {});
+  }, []);
 
   async function create() {
     if (!name.trim()) return;
@@ -125,7 +130,7 @@ export function ProjectsPage({ onOpen }: { onOpen: (slug: string) => void }) {
                     <Badge tone={buildTone(p.status)}>{p.status}</Badge>
                   </div>
                   <code className="route-plate">
-                    /me/<strong>{p.slug}</strong>
+                    /{owner}/<strong>{p.slug}</strong>
                   </code>
                 </button>
                 <div className="row gap muted small project-meta">

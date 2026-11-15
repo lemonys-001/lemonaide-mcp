@@ -97,7 +97,7 @@ export function App() {
   if (section === "projects" && param) {
     page = <ProjectPage projectRef={param} onBack={() => navigate(["projects"])} />;
   } else if (section === "settings") {
-    page = <SettingsPage me={me} onDeleted={() => { setMe(null); setAuth("signedOut"); navigate([""]); }} />;
+    page = <SettingsPage me={me} onMeChanged={(m) => setMe(m)} onDeleted={() => { setMe(null); setAuth("signedOut"); navigate([""]); }} />;
   } else if (section === "docs") {
     page = <DocsPage onBack={() => navigate([""])} />;
   } else if (section === "login" || section === "signup") {

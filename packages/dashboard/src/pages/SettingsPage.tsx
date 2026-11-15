@@ -1,12 +1,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, type McpConnection, type Me } from "../lib/api";
 import { supabase } from "../lib/supabase";
-import { Badge, Button, EmptyState, ErrorBanner, Spinner, timeAgo } from "../components/ui";
+import { Badge, Button, EmptyState, ErrorBanner, Input, Notice, Spinner, timeAgo } from "../components/ui";
 
-export function SettingsPage({ me, onDeleted }: { me: Me | null; onDeleted: () => void }) {
+export function SettingsPage({ me, onMeChanged, onDeleted }: { me: Me | null; onMeChanged: (me: Me) => void; onDeleted: () => void }) {
   const [connections, setConnections] = useState<McpConnection[] | null>(null);
   const [error, setError] = useState("");
   const [deleting, setDeleting] = useState(false);
+  const [newUsername, setNewUsername] = useState("");
+  const [renaming, setRenaming] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -28,6 +30,23 @@ export function SettingsPage({ me, onDeleted }: { me: Me | null; onDeleted: () =
       await load();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    }
+  }
+
+  async function rename() {
+    const username = newUsername.trim().toLowerCase();
+    if (!username || !me || username === me.username) return;
+    setRenaming(true);
+    setError("");
+    try {
+      const res = await api.renameMe(username);
+      const fresh = await api.me();
+      onMeChanged({ ...fresh, username: res.username });
+      setNewUsername("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRenaming(false);
     }
   }
 
@@ -83,6 +102,19 @@ export function SettingsPage({ me, onDeleted }: { me: Me | null; onDeleted: () =
                 <div>
                   <strong>{me.username}</strong>
                 </div>
+                <div className="row gap" style={{ marginTop: 8 }}>
+                  <Input
+                    value={newUsername}
+                    onChange={(v) => setNewUsername(v)}
+                    placeholder="new username"
+                  />
+                  <Button variant="ghost" disabled={renaming || !newUsername.trim()} onClick={rename}>
+                    {renaming ? "Saving…" : "Rename"}
+                  </Button>
+                </div>
+                <Notice tone="warn">
+                  Changing this moves your published apps to /{newUsername.trim().toLowerCase() || "new-username"}/… — old links stop working.
+                </Notice>
               </div>
               <div>
                 <span className="muted small">Display name</span>

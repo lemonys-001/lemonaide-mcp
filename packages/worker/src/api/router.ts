@@ -14,7 +14,7 @@ import type { Env } from "../env";
 import { isProduction } from "../env";
 import { JwtVerificationError, verifySupabaseJwt } from "../auth/jwts";
 import { getSupabaseServiceClient } from "../db/supabase";
-import { ensureProfile, getProfile, recordAudit } from "../db/profiles";
+import { ensureProfile, getProfile, recordAudit, setUsername } from "../db/profiles";
 import * as repos from "../db/repos";
 import { jsonErr, jsonOk, newCorrelationId } from "../lib/http";
 import { supabasePasswordGrant } from "../auth/supabase-upstream";
@@ -249,6 +249,32 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
     );
   });
 
+  app.patch("/me", async (c) => {
+    const user = c.get("user");
+    const db = getSupabaseServiceClient(env);
+    const body = (await c.req.json()) as { username?: string };
+    const username = String(body.username ?? "").trim().toLowerCase();
+    if (!USERNAME_RE.test(username)) {
+      return jsonErr(ErrorCode.INVALID_USERNAME, "username must be 3-30 chars: a-z, 0-9, hyphens (no leading/trailing hyphen)", newCorrelationId(), 422);
+    }
+    if (RESERVED_USERNAMES.has(username)) {
+      return jsonErr(ErrorCode.RESERVED_NAME, `"${username}" is reserved`, newCorrelationId(), 422);
+    }
+    const profile = await getProfile(db, user.userId);
+    if (!profile) {
+      return jsonErr(ErrorCode.NOT_FOUND, "profile not found", newCorrelationId(), 404);
+    }
+    if (profile.username.toLowerCase() !== username) {
+      const { data: taken } = await db.from("profiles").select("id").ilike("username", username).limit(1);
+      if (taken && taken.length > 0) {
+        return jsonErr(ErrorCode.ALREADY_EXISTS, `"${username}" is already taken`, newCorrelationId(), 422);
+      }
+      await setUsername(db, user.userId, username);
+      await recordAudit(db, { userId: user.userId, actorType: user.via, action: "profile.rename", targetType: "profile", targetId: user.userId, meta: { username } });
+    }
+    return jsonOk({ username }, newCorrelationId());
+  });
+
   app.delete("/me", async (c) => {
     const user = c.get("user");
     await deleteAccount(env, user.userId);
@@ -340,29 +366,29 @@ export function createApiRouter(env: Env): Hono<{ Variables: Vars }> {
     return jsonOk(files, newCorrelationId());
   });
 
-  app.get("/projects/:ref/files/*", async (c) => {
+  app.get("/projects/:ref/files/:path{.+}", async (c) => {
     const user = c.get("user");
     const { project } = await requireProjectFor(env, user, c.req.param("ref"));
-    const path = decodeURIComponent(c.req.param("*") ?? "");
+    const path = decodeURIComponent(c.req.param("path") ?? "");
     const content = await getSourceFile(env.BLOB_STORE, project.id, path);
     if (content === null) return jsonErr(ErrorCode.NOT_FOUND, "file not found", newCorrelationId(), 404);
     return jsonOk({ path, content }, newCorrelationId());
   });
 
-  app.put("/projects/:ref/files/*", async (c) => {
+  app.put("/projects/:ref/files/:path{.+}", async (c) => {
     const user = c.get("user");
     const { db, project } = await requireProjectFor(env, user, c.req.param("ref"));
-    const path = decodeURIComponent(c.req.param("*") ?? "");
+    const path = decodeURIComponent(c.req.param("path") ?? "");
     const body = (await c.req.json()) as { content: string };
     const { size, sha256 } = await putSourceFile(env.BLOB_STORE, project.id, path, String(body.content ?? ""));
     await repos.upsertFileRows(db, project.id, [{ path, size, sha256 }]);
     return jsonOk({ path, size, sha256 }, newCorrelationId());
   });
 
-  app.delete("/projects/:ref/files/*", async (c) => {
+  app.delete("/projects/:ref/files/:path{.+}", async (c) => {
     const user = c.get("user");
     const { db, project } = await requireProjectFor(env, user, c.req.param("ref"));
-    const path = decodeURIComponent(c.req.param("*") ?? "");
+    const path = decodeURIComponent(c.req.param("path") ?? "");
     const removed = await repos.deleteFileRow(db, project.id, path);
     if (!removed) return jsonErr(ErrorCode.NOT_FOUND, "file not found", newCorrelationId(), 404);
     await deleteSourceFile(env.BLOB_STORE, project.id, path);

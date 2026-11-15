@@ -130,6 +130,7 @@ export interface ValidationIssue {
 
 export const api = {
   me: () => request<Me>("GET", "/api/me"),
+  renameMe: (username: string) => request<{ username: string }>("PATCH", "/api/me", { body: { username } }),
   usernameAvailable: (username: string) =>
     request<{ username: string; available: boolean; reason?: "invalid" | "reserved" | "taken" }>(
       "GET",
