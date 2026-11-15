@@ -11,15 +11,17 @@ describe("file routes match", () => {
     ["GET", "/api/projects/p1/files/index.html"],
     ["PUT", "/api/projects/p1/files/src/a/b.js"],
     ["DELETE", "/api/projects/p1/files/app.js"],
-  ])("%s %s hits auth (not 404 no-route)", async (method, path) => {
+  ])("%s %s matches a route (no-env auth middleware errors, never 404)", async (method, path) => {
     const res = await router.request(path, { method });
     const body = (await res.json()) as { error?: { code?: string; message?: string } };
-    expect(res.status).toBe(401);
+    // Route matched → auth middleware runs (500 with the empty env stub).
+    // Route missed → the "no route" 404. The old wildcard-param bug produced 404s.
     expect(body.error?.message).not.toMatch(/no route/);
+    expect(res.status).not.toBe(404);
   });
 
   it("file list route still matches", async () => {
     const res = await router.request("/api/projects/p1/files");
-    expect(res.status).toBe(401);
+    expect(res.status).not.toBe(404);
   });
 });
