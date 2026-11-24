@@ -118,8 +118,48 @@ const defaultHandler = {
   },
 };
 
+/**
+ * Lenient OAuth discovery aliases. RFC 9728/8414 clients (Composio, some
+ * gateway installers) probe the root protected-resource document and the
+ * path-suffixed authorization-server document even though the canonical URLs
+ * are elsewhere. The provider answers only the canonical ones, so serve these
+ * aliases before handing the request over.
+ */
+function discoveryAlias(request: Request, env: Env): Response | Promise<Response> | null {
+  if (request.method !== "GET" && request.method !== "HEAD") return null;
+  const { pathname } = new URL(request.url);
+  const origin = new URL(env.MCP_PUBLIC_URL).origin;
+  const json = (body: unknown) =>
+    new Response(JSON.stringify(body), {
+      headers: { "content-type": "application/json", "cache-control": "public, max-age=300", allow: "GET, HEAD" },
+    });
+
+  if (pathname === "/.well-known/oauth-protected-resource") {
+    return json({
+      resource: new URL(env.MCP_PUBLIC_URL).toString(),
+      authorization_servers: [origin],
+      scopes_supported: [...SCOPES_SUPPORTED],
+      bearer_methods_supported: ["header"],
+      resource_documentation: `${origin}/#/docs`,
+    });
+  }
+
+  if (
+    pathname === "/.well-known/oauth-authorization-server/mcp" ||
+    pathname === "/.well-known/openid-configuration" ||
+    pathname === "/.well-known/openid-configuration/mcp"
+  ) {
+    // Mirror the provider's canonical document.
+    return fetch(`${origin}/.well-known/oauth-authorization-server`);
+  }
+
+  return null;
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
+    const alias = discoveryAlias(request, env);
+    if (alias) return alias;
     // Provider is built per request so the canonical resource follows MCP_PUBLIC_URL.
     const provider = buildProvider(env);
     return provider.fetch(request, env, ctx);
