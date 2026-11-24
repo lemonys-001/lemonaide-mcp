@@ -4,6 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
+  # Manual production deploy (used when the check job is skipped/unavailable).
+  workflow_dispatch:
 
 jobs:
   check:
@@ -22,7 +24,11 @@ jobs:
   deploy-worker:
     # Set repository variable ENABLE_CLOUDFLARE_DEPLOY=true after adding the
     # CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID secrets (docs/SETUP.md).
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.ENABLE_CLOUDFLARE_DEPLOY == 'true'
+    if: |
+      vars.ENABLE_CLOUDFLARE_DEPLOY == 'true' && always() && (
+        github.event_name == 'workflow_dispatch' ||
+        (github.ref == 'refs/heads/main' && github.event_name == 'push' && needs.check.result == 'success')
+      )
     needs: check
     runs-on: ubuntu-latest
     permissions:
